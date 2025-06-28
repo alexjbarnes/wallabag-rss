@@ -123,12 +123,14 @@ func (p *Processor) handleSyncModeNone(feedURL string) ([]Article, error) {
 
 // handleSyncModeAll handles the 'all' sync mode
 func (p *Processor) handleSyncModeAll(feedURL string, allArticles []Article) ([]Article, error) {
-	// Return all articles
-	logging.Debug("Sync mode 'all': returning all articles",
+	// Sort all articles oldest first for chronological processing
+	sortedArticles := p.sortArticlesByDate(allArticles)
+	
+	logging.Debug("Sync mode 'all': returning all articles in chronological order",
 		"feed_url", feedURL,
-		"article_count", len(allArticles))
+		"article_count", len(sortedArticles))
 
-	return allArticles, nil
+	return sortedArticles, nil
 }
 
 // handleSyncModeCount handles the 'count' sync mode
@@ -141,20 +143,26 @@ func (p *Processor) handleSyncModeCount(feedURL string, allArticles []Article, s
 		return []Article{}, nil
 	}
 
-	// Sort articles by published date (newest first)
-	sortedArticles := p.sortArticlesByDate(allArticles)
+	// Sort articles by published date (newest first) to get the most recent N
+	sortedNewestFirst := p.sortArticlesByDateNewestFirst(allArticles)
 
-	// Return the most recent N articles
+	// Get the most recent N articles
 	count := *syncCount
-	if count > len(sortedArticles) {
-		count = len(sortedArticles)
+	if count > len(sortedNewestFirst) {
+		count = len(sortedNewestFirst)
 	}
-	logging.Debug("Sync mode 'count': returning most recent articles",
+	
+	recentArticles := sortedNewestFirst[:count]
+	
+	// Now sort these N articles oldest first for processing
+	finalArticles := p.sortArticlesByDate(recentArticles)
+	
+	logging.Debug("Sync mode 'count': returning most recent articles in chronological order",
 		"feed_url", feedURL,
 		"returned_count", count,
 		"total_articles", len(allArticles))
 
-	return sortedArticles[:count], nil
+	return finalArticles, nil
 }
 
 // handleSyncModeDateFrom handles the 'date_from' sync mode
@@ -167,13 +175,17 @@ func (p *Processor) handleSyncModeDateFrom(feedURL string, allArticles []Article
 
 	// Filter articles published on or after the specified date
 	filteredArticles := p.filterArticlesByDate(allArticles, syncDateFrom)
-	logging.Debug("Sync mode 'date_from': returning articles after date",
+	
+	// Sort filtered articles oldest first for chronological processing
+	sortedArticles := p.sortArticlesByDate(filteredArticles)
+	
+	logging.Debug("Sync mode 'date_from': returning articles after date in chronological order",
 		"feed_url", feedURL,
-		"filtered_count", len(filteredArticles),
+		"filtered_count", len(sortedArticles),
 		"sync_date_from", p.formatDateOrNil(syncDateFrom),
 		"total_articles", len(allArticles))
 
-	return filteredArticles, nil
+	return sortedArticles, nil
 }
 
 // handleUnknownSyncMode handles unknown sync modes
@@ -185,8 +197,32 @@ func (p *Processor) handleUnknownSyncMode(feedURL string, syncMode models.SyncMo
 	return []Article{}, nil
 }
 
-// sortArticlesByDate sorts articles by published date (newest first)
+// sortArticlesByDate sorts articles by published date (oldest first)
 func (p *Processor) sortArticlesByDate(articles []Article) []Article {
+	sortedArticles := make([]Article, len(articles))
+	copy(sortedArticles, articles)
+	sort.Slice(sortedArticles, func(firstIdx, secondIdx int) bool {
+		firstTime := sortedArticles[firstIdx].PublishedAt
+		secondTime := sortedArticles[secondIdx].PublishedAt
+
+		if firstTime == nil && secondTime == nil {
+			return false
+		}
+		if firstTime == nil {
+			return false
+		}
+		if secondTime == nil {
+			return true
+		}
+
+		return firstTime.Before(*secondTime)
+	})
+
+	return sortedArticles
+}
+
+// sortArticlesByDateNewestFirst sorts articles by published date (newest first)
+func (p *Processor) sortArticlesByDateNewestFirst(articles []Article) []Article {
 	sortedArticles := make([]Article, len(articles))
 	copy(sortedArticles, articles)
 	sort.Slice(sortedArticles, func(firstIdx, secondIdx int) bool {

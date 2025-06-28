@@ -474,10 +474,10 @@ func TestProcessor_FetchAndParseWithSyncOptions(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, articles, 3)
 
-		// Should be sorted by date, newest first
-		assert.Equal(t, "Article from Jan 5", articles[0].Title)
+		// Should return the 3 most recent articles (Jan 3, 4, 5) but sorted oldest first for processing
+		assert.Equal(t, "Article from Jan 3", articles[0].Title)
 		assert.Equal(t, "Article from Jan 4", articles[1].Title)
-		assert.Equal(t, "Article from Jan 3", articles[2].Title)
+		assert.Equal(t, "Article from Jan 5", articles[2].Title)
 	})
 
 	t.Run("SyncModeCount - count larger than available articles", func(t *testing.T) {
