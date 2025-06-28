@@ -15,7 +15,7 @@ A tool to fetch articles from RSS feeds and automatically send them to your Wall
 
 ## Prerequisites
 
-- Go 1.24.1 or later
+- Go 1.24.4 or later
 - A running Wallabag instance
 - Wallabag API credentials
 
@@ -23,8 +23,8 @@ A tool to fetch articles from RSS feeds and automatically send them to your Wall
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/wallabag-rss-tool.git
-   cd wallabag-rss-tool
+   git clone https://github.com/alexjbarnes/wallabag-rss.git
+   cd wallabag-rss
    ```
 
 2. **Install dependencies:**
@@ -34,40 +34,55 @@ A tool to fetch articles from RSS feeds and automatically send them to your Wall
 
 3. **Install development tools:**
    ```bash
-   make install-tools
+   just install-tools
    ```
 
 ## Configuration
 
-Set the following environment variables with your Wallabag API credentials:
+Copy the example environment file and configure your settings:
 
 ```bash
-export WALLABAG_BASE_URL="https://your-wallabag-instance.com"
-export WALLABAG_CLIENT_ID="your_client_id"
-export WALLABAG_CLIENT_SECRET="your_client_secret"
-export WALLABAG_USERNAME="your_username"
-export WALLABAG_PASSWORD="your_password"
+cp .env.example .env
+# Edit .env with your Wallabag API credentials
 ```
+
+Required environment variables:
+- `WALLABAG_BASE_URL` - Your Wallabag instance URL
+- `WALLABAG_CLIENT_ID` - Wallabag API client ID  
+- `WALLABAG_CLIENT_SECRET` - Wallabag API client secret
+- `WALLABAG_USERNAME` - Your Wallabag username
+- `WALLABAG_PASSWORD` - Your Wallabag password
+
+Optional configuration:
+- `LOG_LEVEL` - Logging level (DEBUG, INFO, WARN, ERROR) - defaults to INFO
+- `LOG_FORMAT` - Log format (json, text) - defaults to json
+- `SERVER_PORT` - Port to run the server on - defaults to 8080
 
 ## Building and Running
 
-### Using Make (recommended):
+### Using Just (recommended):
 
 ```bash
 # Build the application
-make build
+just build
 
 # Run the application
-make run
+just run
 
 # Run in development mode
-make dev
+just dev
 
 # Run tests
-make test
+just test
 
 # Run tests with coverage
-make test-coverage
+just test-coverage
+
+# Format code
+just fmt
+
+# Run linting
+just lint
 ```
 
 ### Manual build:
@@ -87,7 +102,7 @@ go build -o wallabag-rss-tool .
 
 1. **Start the application:**
    ```bash
-   make run
+   just run
    ```
 
 2. **Open your browser** and navigate to `http://localhost:8080`
@@ -119,10 +134,11 @@ go build -o wallabag-rss-tool .
 
 ### Technology Stack
 
-- **Backend:** Go 1.24.1
+- **Backend:** Go 1.24.4
 - **Templates:** [Templ](https://github.com/a-h/templ) - Type-safe Go templates
 - **Frontend:** Bootstrap 5 + HTMX
 - **Database:** SQLite
+- **Build Tool:** [Just](https://github.com/casey/just) - Command runner
 - **Testing:** Go testing + testify + gomock
 
 ### Working with Templates
@@ -131,13 +147,13 @@ The project uses Templ for type-safe HTML templates. Template files are located 
 
 To modify templates:
 1. Edit the `.templ` files in the `views/` directory
-2. Run `make generate` to regenerate Go code
+2. Run `just generate` to regenerate Go code
 3. Build and test your changes
 
 For development with live reload:
 ```bash
-make watch  # In one terminal
-make dev    # In another terminal
+just watch  # In one terminal
+just dev    # In another terminal
 ```
 
 ### Database Schema
@@ -155,10 +171,10 @@ The project has comprehensive unit tests with >80% coverage:
 
 ```bash
 # Run all tests
-make test
+just test
 
 # Run tests with coverage report
-make test-coverage
+just test-coverage
 
 # Run specific package tests
 go test ./pkg/models/
@@ -225,7 +241,7 @@ go run . 2>&1 | tee app.log
 2. Create a feature branch
 3. Make your changes
 4. Add tests for new functionality
-5. Ensure all tests pass: `make test`
+5. Ensure all tests pass: `just test`
 6. Submit a pull request
 
 ## License
