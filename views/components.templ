@@ -1,0 +1,23 @@
+package views
+
+import "strconv"
+
+templ PollIntervalDisplay(intervalInMinutes int) {
+	<span id="default-poll-interval-display">
+		@PollIntervalText(intervalInMinutes)
+	</span>
+}
+
+templ PollIntervalText(intervalInMinutes int) {
+	if intervalInMinutes == 1440 {
+		1 day
+	} else if intervalInMinutes == 60 {
+		1 hour
+	} else if intervalInMinutes%1440 == 0 {
+		{ strconv.Itoa(intervalInMinutes/1440) } days
+	} else if intervalInMinutes%60 == 0 {
+		{ strconv.Itoa(intervalInMinutes/60) } hours
+	} else {
+		{ strconv.Itoa(intervalInMinutes) } minutes
+	}
+}

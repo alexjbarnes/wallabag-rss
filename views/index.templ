@@ -1,0 +1,31 @@
+package views
+
+templ Index(data PageData) {
+	@Layout(data) {
+		<div class="p-5 mb-4 bg-light rounded-3">
+			<div class="container-fluid py-5">
+				<h1 class="display-5 fw-bold">Welcome to Wallabag RSS Tool</h1>
+				<p class="col-md-8 fs-4">Your personal tool to pull articles from RSS feeds and send them to your Wallabag instance.</p>
+				<hr class="my-4"/>
+				<p>Use the navigation above to manage your RSS feeds, view processed articles, or configure settings.</p>
+				<form style="display: inline;">
+					<input type="hidden" name="csrf_token" value={ data.CSRFToken }/>
+					<button class="btn btn-primary btn-lg" type="button" hx-post="/sync" hx-include="[name='csrf_token']" hx-indicator="#sync-indicator">Manual Sync</button>
+				</form>
+				<span id="sync-indicator" class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+			</div>
+		</div>
+		<div class="row">
+			<div class="col-md-6">
+				<h2>Feeds Overview</h2>
+				<p>Quick summary of your configured feeds.</p>
+				<a class="btn btn-secondary" href="/feeds">Manage Feeds &raquo;</a>
+			</div>
+			<div class="col-md-6">
+				<h2>Articles Log</h2>
+				<p>View recently processed articles.</p>
+				<a class="btn btn-secondary" href="/articles">View Articles &raquo;</a>
+			</div>
+		</div>
+	}
+}

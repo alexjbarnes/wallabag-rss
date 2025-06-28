@@ -1,0 +1,318 @@
+package views
+
+import "wallabag-rss-tool/pkg/models"
+import "strconv"
+
+type FeedsData struct {
+	PageData
+	Feeds []models.Feed
+	DefaultPollInterval int
+}
+
+func getFeedPollIntervalValue(feed models.Feed) string {
+	if feed.PollInterval == 0 {
+		return "0"
+	}
+	return strconv.Itoa(feed.PollInterval)
+}
+
+templ Feeds(data FeedsData) {
+	@Layout(data.PageData) {
+		<div class="container mt-4">
+			<h1>Manage RSS Feeds</h1>
+			<p>Add, edit, or remove RSS feeds that Wallabag RSS Tool will monitor.</p>
+			<div class="card mb-4">
+				<div class="card-header">
+					Add New Feed
+				</div>
+				<div class="card-body">
+					<form hx-post="/feeds" hx-target="#feeds-list" hx-swap="beforeend" hx-on::after-request="this.reset()">
+						<input type="hidden" name="csrf_token" value={ data.CSRFToken }/>
+						<div class="mb-3">
+							<label for="feedName" class="form-label">Feed Name</label>
+							<input type="text" class="form-control" id="feedName" name="name" required/>
+						</div>
+						<div class="mb-3">
+							<label for="feedURL" class="form-label">Feed URL</label>
+							<input type="url" class="form-control" id="feedURL" name="url" required/>
+						</div>
+						<div class="mb-3">
+							<label for="pollInterval" class="form-label">Poll Interval (Current default: 
+								if data.DefaultPollInterval == 1440 {
+									1 day
+								} else if data.DefaultPollInterval == 60 {
+									1 hour
+								} else if data.DefaultPollInterval%1440 == 0 {
+									{ strconv.Itoa(data.DefaultPollInterval/1440) } days
+								} else if data.DefaultPollInterval%60 == 0 {
+									{ strconv.Itoa(data.DefaultPollInterval/60) } hours
+								} else {
+									{ strconv.Itoa(data.DefaultPollInterval) } minutes
+								}
+							)</label>
+							<div class="row">
+								<div class="col-md-6">
+									<input type="number" class="form-control" id="pollInterval" name="poll_interval" value="0" min="0" disabled/>
+								</div>
+								<div class="col-md-6">
+									<select class="form-control" id="pollIntervalUnit" name="poll_interval_unit" onchange="togglePollInterval()">
+										<option value="default" selected>Default</option>
+										<option value="minutes">Minutes</option>
+										<option value="hours">Hours</option>
+										<option value="days">Days</option>
+									</select>
+								</div>
+							</div>
+						</div>
+						<div class="mb-3">
+							<label for="syncMode" class="form-label">Historical Articles Sync</label>
+							<select class="form-control" id="syncMode" name="sync_mode" onchange="toggleSyncOptions()">
+								<option value="none">None - Only sync new articles from now</option>
+								<option value="all">All - Sync all available articles</option>
+								<option value="count">Count - Sync last N articles</option>
+								<option value="date_from">Date From - Sync articles from specific date</option>
+							</select>
+						</div>
+						<div class="mb-3" id="syncCountDiv" style="display: none;">
+							<label for="syncCount" class="form-label">Number of Articles</label>
+							<input type="number" class="form-control" id="syncCount" name="sync_count" min="1" max="1000" value="10"/>
+						</div>
+						<div class="mb-3" id="syncDateFromDiv" style="display: none;">
+							<label for="syncDateFrom" class="form-label">Sync From Date</label>
+							<input type="date" class="form-control" id="syncDateFrom" name="sync_date_from"/>
+						</div>
+						<button type="submit" class="btn btn-primary">Add Feed</button>
+					</form>
+				</div>
+			</div>
+			<h2>Existing Feeds</h2>
+			<div id="feeds-list">
+				for _, feed := range data.Feeds {
+					@FeedRow(feed, data.DefaultPollInterval, data.CSRFToken)
+				}
+			</div>
+		</div>
+		<script type="text/javascript">
+			function togglePollInterval() {
+				var unit = document.getElementById('pollIntervalUnit');
+				var input = document.getElementById('pollInterval');
+				if (unit && input) {
+					if (unit.value === 'default') {
+						input.disabled = true;
+						input.value = '0';
+					} else {
+						input.disabled = false;
+						input.value = '1';
+					}
+				}
+			}
+			
+			function toggleSyncOptions() {
+				var syncMode = document.getElementById('syncMode');
+				var countDiv = document.getElementById('syncCountDiv');
+				var dateDiv = document.getElementById('syncDateFromDiv');
+				
+				if (syncMode && countDiv && dateDiv) {
+					countDiv.style.display = syncMode.value === 'count' ? 'block' : 'none';
+					dateDiv.style.display = syncMode.value === 'date_from' ? 'block' : 'none';
+				}
+			}
+			
+			function toggleEditPollInterval(feedId) {
+				var unitSelect = document.getElementById('editPollIntervalUnit-' + feedId);
+				var input = document.getElementById('editPollInterval-' + feedId);
+				
+				if (unitSelect && input) {
+					var unit = unitSelect.value;
+					if (unit === 'default') {
+						input.disabled = true;
+						input.value = '0';
+					} else {
+						input.disabled = false;
+						if (input.value === '0') input.value = '1';
+					}
+				}
+			}
+			
+			function toggleEditSyncOptions(feedId) {
+				var syncMode = document.getElementById('editSyncMode-' + feedId);
+				var countDiv = document.getElementById('editSyncCountDiv-' + feedId);
+				var dateDiv = document.getElementById('editSyncDateFromDiv-' + feedId);
+				
+				if (syncMode && countDiv && dateDiv) {
+					var modeValue = syncMode.value;
+					countDiv.style.display = modeValue === 'count' ? 'block' : 'none';
+					dateDiv.style.display = modeValue === 'date_from' ? 'block' : 'none';
+				}
+			}
+			
+			// Make functions globally available
+			window.togglePollInterval = togglePollInterval;
+			window.toggleSyncOptions = toggleSyncOptions;
+			window.toggleEditPollInterval = toggleEditPollInterval;
+			window.toggleEditSyncOptions = toggleEditSyncOptions;
+			
+			function initializeEverything() {
+				// Initialize main form
+				togglePollInterval();
+				toggleSyncOptions();
+				
+				// Add event listeners to main form
+				var pollUnit = document.getElementById('pollIntervalUnit');
+				var syncMode = document.getElementById('syncMode');
+				
+				if (pollUnit) {
+					pollUnit.addEventListener('change', togglePollInterval);
+				}
+				if (syncMode) {
+					syncMode.addEventListener('change', toggleSyncOptions);
+				}
+				
+				// Initialize edit forms
+				var editPollSelects = document.querySelectorAll('[id^="editPollIntervalUnit-"]');
+				var editSyncSelects = document.querySelectorAll('[id^="editSyncMode-"]');
+				
+				editPollSelects.forEach(function(select) {
+					var feedId = select.id.replace('editPollIntervalUnit-', '');
+					toggleEditPollInterval(feedId);
+					select.addEventListener('change', function() {
+						toggleEditPollInterval(feedId);
+					});
+				});
+				
+				editSyncSelects.forEach(function(select) {
+					var feedId = select.id.replace('editSyncMode-', '');
+					toggleEditSyncOptions(feedId);
+					select.addEventListener('change', function() {
+						toggleEditSyncOptions(feedId);
+					});
+				});
+			}
+			
+			// Initialize immediately if DOM is ready, otherwise wait
+			if (document.readyState === 'loading') {
+				document.addEventListener('DOMContentLoaded', initializeEverything);
+			} else {
+				initializeEverything();
+			}
+			
+			// HTMX event handlers
+			document.body.addEventListener('htmx:afterSwap', function() {
+				setTimeout(initializeEverything, 100);
+			});
+			
+			document.body.addEventListener('htmx:afterSettle', function() {
+				setTimeout(initializeEverything, 100);
+			});
+		</script>
+	}
+}
+
+
+templ FeedRow(feed models.Feed, defaultPollInterval int, csrfToken string) {
+	<div id={ "feed-" + strconv.Itoa(feed.ID) } class="card mb-2">
+		<div class="card-body d-flex justify-content-between align-items-center">
+			<div>
+				<h5 class="card-title">{ feed.Name }</h5>
+				<p class="card-text mb-0"><small class="text-muted">URL: { feed.URL }</small></p>
+				<p class="card-text mb-0"><small class="text-muted">Poll Interval: 
+					if feed.PollInterval == 0 {
+						Default (
+						if defaultPollInterval == 1440 {
+							1 day
+						} else if defaultPollInterval == 60 {
+							1 hour
+						} else if defaultPollInterval%1440 == 0 {
+							{ strconv.Itoa(defaultPollInterval/1440) } days
+						} else if defaultPollInterval%60 == 0 {
+							{ strconv.Itoa(defaultPollInterval/60) } hours
+						} else {
+							{ strconv.Itoa(defaultPollInterval) } minutes
+						}
+						)
+					} else {
+						{ strconv.Itoa(feed.PollInterval) } { string(feed.PollIntervalUnit) }
+					}
+				</small></p>
+				if feed.LastFetched != nil {
+					<p class="card-text mb-0"><small class="text-muted">Last Fetched: { feed.LastFetched.Format("2006-01-02 15:04:05") }</small></p>
+				}
+			</div>
+			<div>
+				<button class="btn btn-sm btn-warning me-2" hx-get={ "/feeds/edit/" + strconv.Itoa(feed.ID) } hx-target={ "#feed-" + strconv.Itoa(feed.ID) } hx-swap="outerHTML">Edit</button>
+				<button class="btn btn-sm btn-danger" hx-delete={ "/feeds/" + strconv.Itoa(feed.ID) } hx-confirm={ "Are you sure you want to delete '" + feed.Name + "'?" } hx-target={ "#feed-" + strconv.Itoa(feed.ID) } hx-swap="outerHTML swap:0.5s" hx-headers={ "{\"X-CSRF-Token\": \"" + csrfToken + "\"}" }>Delete</button>
+			</div>
+		</div>
+	</div>
+}
+
+type FeedEditData struct {
+	Feed                models.Feed
+	DefaultPollInterval int
+	CSRFToken           string
+}
+
+templ FeedEditForm(data FeedEditData) {
+	<div id={ "feed-" + strconv.Itoa(data.Feed.ID) } class="card mb-2">
+		<div class="card-body">
+			<form hx-put={ "/feeds/" + strconv.Itoa(data.Feed.ID) } hx-target={ "#feed-" + strconv.Itoa(data.Feed.ID) } hx-swap="outerHTML">
+				<input type="hidden" name="csrf_token" value={ data.CSRFToken }/>
+				<div class="mb-3">
+					<label for={ "editFeedName-" + strconv.Itoa(data.Feed.ID) } class="form-label">Feed Name</label>
+					<input type="text" class="form-control" id={ "editFeedName-" + strconv.Itoa(data.Feed.ID) } name="name" value={ data.Feed.Name } required/>
+				</div>
+				<div class="mb-3">
+					<label for={ "editFeedURL-" + strconv.Itoa(data.Feed.ID) } class="form-label">Feed URL</label>
+					<input type="url" class="form-control" id={ "editFeedURL-" + strconv.Itoa(data.Feed.ID) } name="url" value={ data.Feed.URL } required/>
+				</div>
+				<div class="mb-3">
+					<label for={ "editPollInterval-" + strconv.Itoa(data.Feed.ID) } class="form-label">Poll Interval (Current default: 
+						if data.DefaultPollInterval == 1440 {
+							1 day
+						} else if data.DefaultPollInterval == 60 {
+							1 hour
+						} else if data.DefaultPollInterval%1440 == 0 {
+							{ strconv.Itoa(data.DefaultPollInterval/1440) } days
+						} else if data.DefaultPollInterval%60 == 0 {
+							{ strconv.Itoa(data.DefaultPollInterval/60) } hours
+						} else {
+							{ strconv.Itoa(data.DefaultPollInterval) } minutes
+						}
+					)</label>
+					<div class="row">
+						<div class="col-md-6">
+							<input type="number" class="form-control" id={ "editPollInterval-" + strconv.Itoa(data.Feed.ID) } name="poll_interval" value={ getFeedPollIntervalValue(data.Feed) } min="0" if data.Feed.PollInterval == 0 { disabled }/>
+						</div>
+						<div class="col-md-6">
+							<select class="form-control" id={ "editPollIntervalUnit-" + strconv.Itoa(data.Feed.ID) } name="poll_interval_unit">
+								<option value="default" if data.Feed.PollInterval == 0 { selected }>Default</option>
+								<option value="minutes" if data.Feed.PollInterval > 0 && data.Feed.PollIntervalUnit == "minutes" { selected }>Minutes</option>
+								<option value="hours" if data.Feed.PollInterval > 0 && data.Feed.PollIntervalUnit == "hours" { selected }>Hours</option>
+								<option value="days" if data.Feed.PollInterval > 0 && data.Feed.PollIntervalUnit == "days" { selected }>Days</option>
+							</select>
+						</div>
+					</div>
+				</div>
+				<div class="mb-3">
+					<label for={ "editSyncMode-" + strconv.Itoa(data.Feed.ID) } class="form-label">Historical Articles Sync</label>
+					<select class="form-control" id={ "editSyncMode-" + strconv.Itoa(data.Feed.ID) } name="sync_mode">
+						<option value="none" if data.Feed.SyncMode == "none" { selected }>None - Only sync new articles from now</option>
+						<option value="all" if data.Feed.SyncMode == "all" { selected }>All - Sync all available articles</option>
+						<option value="count" if data.Feed.SyncMode == "count" { selected }>Count - Sync last N articles</option>
+						<option value="date_from" if data.Feed.SyncMode == "date_from" { selected }>Date From - Sync articles from specific date</option>
+					</select>
+				</div>
+				<div class="mb-3" id={ "editSyncCountDiv-" + strconv.Itoa(data.Feed.ID) } style={ "display: " + templ.SafeCSS(func() string { if data.Feed.SyncMode == "count" { return "block" } else { return "none" } }()) + ";" }>
+					<label for={ "editSyncCount-" + strconv.Itoa(data.Feed.ID) } class="form-label">Number of Articles</label>
+					<input type="number" class="form-control" id={ "editSyncCount-" + strconv.Itoa(data.Feed.ID) } name="sync_count" min="1" max="1000" value={ func() string { if data.Feed.SyncCount != nil { return strconv.Itoa(*data.Feed.SyncCount) } else { return "10" } }() }/>
+				</div>
+				<div class="mb-3" id={ "editSyncDateFromDiv-" + strconv.Itoa(data.Feed.ID) } style={ "display: " + templ.SafeCSS(func() string { if data.Feed.SyncMode == "date_from" { return "block" } else { return "none" } }()) + ";" }>
+					<label for={ "editSyncDateFrom-" + strconv.Itoa(data.Feed.ID) } class="form-label">Sync From Date</label>
+					<input type="date" class="form-control" id={ "editSyncDateFrom-" + strconv.Itoa(data.Feed.ID) } name="sync_date_from" value={ func() string { if data.Feed.SyncDateFrom != nil { return data.Feed.SyncDateFrom.Format("2006-01-02") } else { return "" } }() }/>
+				</div>
+				<button type="submit" class="btn btn-primary me-2">Save</button>
+				<button type="button" class="btn btn-secondary" hx-get={ "/feeds/row/" + strconv.Itoa(data.Feed.ID) } hx-target={ "#feed-" + strconv.Itoa(data.Feed.ID) } hx-swap="outerHTML">Cancel</button>
+			</form>
+		</div>
+	</div>
+}

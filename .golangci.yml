@@ -1,0 +1,563 @@
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+output:
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  
+  govet:
+    enable-all: true
+    shadow: true
+  
+  gofmt:
+    simplify: true
+  
+  goimports:
+    local-prefixes: wallabag-rss-tool
+  
+  golint:
+    min-confidence: 0.8
+  
+  gocyclo:
+    min-complexity: 10
+  
+  maligned:
+    suggest-new: true
+  
+  dupl:
+    threshold: 100
+  
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+  
+  misspell:
+    locale: US
+  
+  lll:
+    line-length: 120
+  
+  unused:
+    check-exported: false
+  
+  unparam:
+    check-exported: false
+  
+  nakedret:
+    max-func-lines: 30
+  
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: false
+  
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - dupImport
+      - ifElseChain
+      - octalLiteral
+      - whyNoLint
+  
+  gocognit:
+    min-complexity: 15
+  
+  funlen:
+    lines: 80
+    statements: 40
+  
+  godox:
+    keywords:
+      - NOTE
+      - OPTIMIZE
+      - HACK
+  
+  gosec:
+    severity: low  # Catch more issues
+    confidence: low  # Be more sensitive
+    excludes:
+      - G304  # File path provided as taint input (we handle this manually)
+    config:
+      G115: # Potential integer overflow when converting to a smaller integer
+        "threshold": 32
+      G101: # Look for hard coded credentials
+        "threshold": 1  # Very sensitive to credentials
+      G102: # Bind to all interfaces
+        "threshold": 1
+      G103: # Audit the use of unsafe block
+        "threshold": 1
+      G104: # Audit errors not checked
+        "threshold": 1
+      G106: # Audit the use of ssh.InsecureIgnoreHostKey
+        "threshold": 1
+      G107: # Url provided to HTTP request as taint input
+        "threshold": 1
+      G108: # Profiling endpoint automatically exposed on /debug/pprof
+        "threshold": 1
+      G201: # SQL query construction using format string
+        "threshold": 1
+      G202: # SQL query construction using string concatenation
+        "threshold": 1
+      G203: # Use of unescaped data in HTML templates
+        "threshold": 1
+      G204: # Audit use of command execution
+        "threshold": 1
+      G301: # Poor file permissions used when creating a directory
+        "threshold": 1
+      G302: # Poor file permissions used with chmod
+        "threshold": 1
+      G303: # Creating tempfile using a predictable path
+        "threshold": 1
+      G305: # File traversal when extracting zip/tar archive
+        "threshold": 1
+      G401: # Detect the usage of DES, RC4, MD5 or SHA1
+        "threshold": 1
+      G402: # Look for bad TLS connection settings
+        "threshold": 1
+      G403: # Ensure minimum RSA key length of 2048 bits
+        "threshold": 1
+      G404: # Insecure random number source (rand)
+        "threshold": 1
+      G501: # Import blocklist: crypto/md5
+        "threshold": 1
+      G502: # Import blocklist: crypto/des
+        "threshold": 1
+      G503: # Import blocklist: crypto/rc4
+        "threshold": 1
+      G504: # Import blocklist: net/http/cgi
+        "threshold": 1
+      G505: # Import blocklist: crypto/sha1
+        "threshold": 1
+      G601: # Implicit memory aliasing of items from a range statement
+        "threshold": 1
+  
+  nestif:
+    min-complexity: 4
+  
+  cyclop:
+    max-complexity: 10
+    package-average: 5.0
+    skip-tests: true
+  
+  varnamelen:
+    min-name-length: 2
+    ignore-type-assert-ok: true
+    ignore-map-index-ok: true
+    ignore-chan-recv-ok: true
+    ignore-names:
+      - err
+      - ok
+      - id
+      - db
+      - tx
+  
+  wsl:
+    strict-append: true
+    allow-assign-and-call: true
+    allow-multiline-assign: true
+    allow-case-trailing-whitespace: true
+    allow-cuddle-declarations: false
+    allow-trailing-comment: false
+    force-case-trailing-whitespace: 0
+  
+  exhaustive:
+    check-generated: false
+    default-signifies-exhaustive: false
+  
+  revive:
+    min-confidence: 0.8
+    rules:
+      - name: var-naming
+      - name: package-comments
+      - name: range-val-in-closure
+      - name: errorf
+      - name: error-return
+      - name: error-naming
+      - name: if-return
+      - name: increment-decrement
+      - name: var-declaration
+      - name: range-val-address
+      - name: time-equal
+      - name: context-as-argument
+      - name: context-keys-type
+  
+  nlreturn:
+    block-size: 2
+  
+  testpackage:
+    skip-regexp: (export|internal)_test\.go
+  
+  thelper:
+    test:
+      first: true
+      name: true
+      begin: true
+    benchmark:
+      first: true
+      name: true
+      begin: true
+  
+  stylecheck:
+    checks: ["all"]
+  
+  # Additional security and performance linter settings
+  depguard:
+    rules:
+      main:
+        deny:
+          - pkg: "github.com/pkg/errors"
+            desc: "Use standard library errors package"
+          - pkg: "io/ioutil"
+            desc: "Use os and io packages instead of deprecated ioutil"
+  
+  forbidigo:
+    forbid:
+      - "^print.*$"
+      - "^fmt\\.Print.*$"
+      - "^log\\.Print.*$"
+      - "^panic$"
+      # Security-sensitive logging patterns
+      - 'logging\..*username'
+      - 'logging\..*password'
+      - 'logging\..*secret'
+      - 'logging\..*token'
+      - 'logging\..*key'
+      - 'log\..*username'
+      - 'log\..*password'
+      - 'slog\..*username'
+      # Unsafe HTTP patterns
+      - 'http\.ListenAndServe\([^,]+, nil\)'
+      # Unsafe file operations
+      - 'os\.Create\([^)]*\.\.[^)]*\)'
+      - 'ioutil\.ReadFile\([^)]*\.\.[^)]*\)'
+      # Resource leak patterns - require explicit Close() calls
+      - p: 'os\.Open\('
+        msg: "os.Open() calls must be paired with defer file.Close() - potential resource leak"
+      - p: 'os\.Create\('
+        msg: "os.Create() calls must be paired with defer file.Close() - potential resource leak"
+      - p: 'os\.OpenFile\('
+        msg: "os.OpenFile() calls must be paired with defer file.Close() - potential resource leak"
+      - p: '\.Prepare\('
+        msg: "Database Prepare() calls must be paired with defer stmt.Close() - potential resource leak"
+      - p: 'time\.NewTicker\('
+        msg: "time.NewTicker() calls must be paired with defer ticker.Stop() - potential resource leak"
+      - p: 'time\.NewTimer\('
+        msg: "time.NewTimer() calls must be paired with defer timer.Stop() - potential resource leak"
+      - p: 'context\.WithCancel\('
+        msg: "context.WithCancel() calls must be paired with defer cancel() - potential resource leak"
+      - p: 'context\.WithTimeout\('
+        msg: "context.WithTimeout() calls must be paired with defer cancel() - potential resource leak"
+      - p: 'context\.WithDeadline\('
+        msg: "context.WithDeadline() calls must be paired with defer cancel() - potential resource leak"
+    exclude_godoc_examples: false
+  
+  musttag:
+    functions:
+      - name: encoding/json.Marshal
+        tag: json
+        arg-pos: 0
+      - name: encoding/json.Unmarshal
+        tag: json
+        arg-pos: 1
+  
+  perfsprint:
+    int-conversion: true
+    err-error: true
+    errorf: true
+    sprintf1: true
+    strconcat: true
+  
+  containedctx:
+    check-embedded: true
+  
+  contextcheck:
+    check-non-inherited: true
+  
+  reassign:
+    patterns:
+      - '.*'
+  
+  mirror:
+    go-version: "1.18"
+  
+  asasalint:
+    exclude:
+      - Append
+      - \.Wrapf
+    use-builtin-exclusions: true
+    ignore-test: true
+  
+  sloglint:
+    no-mixed-args: true
+    kv-only: false
+    attr-only: false
+    context: "all"
+    static-msg: false
+    no-raw-keys: false
+    key-naming-case: snake
+    args-on-sep-lines: false
+  
+  tagalign:
+    align: true
+    sort: true
+    order:
+      - json
+      - yaml
+      - xml
+      - db
+      - env
+  
+  tagliatelle:
+    case:
+      rules:
+        json: snake
+        yaml: snake
+        xml: camel
+        env: screaming_snake
+  
+  inamedparam:
+    skip-single-param: true
+  
+  nonamedreturns:
+    report-error-in-defer: true
+  
+  nolintlint:
+    allow-unused: false
+    allow-no-explanation: []
+    require-explanation: true
+    require-specific: true
+  
+  # Enhanced nil checking
+  nilnil:
+    checked-types:
+      - ptr
+      - func
+      - iface
+      - map
+      - chan
+  
+  # Advanced error checking
+  errorlint:
+    errorf: true
+    errorf-multi: true
+    asserts: true
+    comparison: true
+  
+  # Loop variable copying (replaces exportloopref)
+  copyloopvar:
+    check-alias: true
+
+linters:
+  enable:
+    # Default linters
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    
+    # Formatting and style
+    - misspell
+    - unconvert
+    - whitespace
+    - tagalign
+    - tagliatelle
+    
+    # Code complexity and cognitive load
+    - gocyclo
+    - gocognit
+    - cyclop
+    - funlen
+    - nestif
+    - maintidx
+    
+    # Constants and duplicates
+    - goconst
+    - dupl
+    
+    # Performance
+    - prealloc
+    - makezero
+    - perfsprint
+    
+    # Security and safety
+    - gosec
+    - depguard
+    - forbidigo
+    
+    # Bug prevention and reliability
+    - bodyclose
+    - rowserrcheck
+    - sqlclosecheck
+    - contextcheck
+    - containedctx
+    - nilerr
+    - nilnil
+    - errorlint
+    - errname
+    - noctx
+    - musttag
+    - mirror
+    - reassign
+    
+    # Additional safety linters
+    - copyloopvar
+    
+    # Code quality and best practices
+    - nakedret
+    - unparam
+    - varnamelen
+    - nonamedreturns
+    - inamedparam
+    - exhaustive
+    - asasalint
+    - sloglint
+    - revive
+    - stylecheck
+    - gocritic
+    
+    # Testing
+    - testpackage
+    - thelper
+    - tparallel
+    
+    # Documentation and comments
+    - godox
+    - nolintlint
+    
+    # Formatting and imports
+    - nlreturn
+    
+  disable: []
+
+issues:
+  exclude-dirs:
+    - vendor
+    - tmp
+    - views
+  exclude-files:
+    - ".*_templ.go"
+    - "views/*.go"
+  exclude-rules:
+    # Exclude some linters from running on tests files.
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+        - funlen
+        - gocognit
+        - varnamelen
+        - nlreturn
+        - wsl
+        - cyclop
+        - nestif
+        - maintidx
+        - forbidigo
+        - nonamedreturns
+        - inamedparam
+        - perfsprint
+        - contextcheck
+        - containedctx
+        - noctx
+        - copyloopvar
+        - nilnil
+        - errorlint
+    
+    # Exclude known linter issues
+    - text: "Use of weak random number generator"
+      linters:
+        - gosec
+    
+    # Exclude shadow checking on err variables
+    - text: "shadow: declaration of \"err\""
+      linters:
+        - govet
+    
+    # Exclude some staticcheck messages
+    - text: "SA9003:"
+      linters:
+        - staticcheck
+    
+    # Exclude lll issues for long lines of strings
+    - source: "^//go:generate "
+      linters:
+        - lll
+    
+    # Allow Print functions in main package
+    - path: main\.go
+      linters:
+        - forbidigo
+    
+    # Allow context.TODO() in certain cases
+    - text: "Non-inherited new context"
+      linters:
+        - contextcheck
+    
+    # Allow some common short variable names
+    - text: "variable name '(i|j|k|v|w|r)' is too short"
+      linters:
+        - varnamelen
+    
+    # Allow panic in main function
+    - path: main\.go
+      text: "calls to panic"
+      linters:
+        - forbidigo
+    
+    # Exclude musttag for internal structs that don't need JSON tags
+    - text: "missing tag"
+      linters:
+        - musttag
+      path: ".*_test\\.go"
+    
+    # Allow reassignment in tests
+    - path: _test\.go
+      linters:
+        - reassign
+    
+    # Exclude common false positives
+    - text: "hardcoded credentials"
+      source: "tokenURLPath|entryURLPath"
+      linters:
+        - gosec
+    
+    # Allow test environment setup
+    - text: "os.Setenv|os.Unsetenv"
+      path: _test\.go
+      linters:
+        - errcheck
+    
+    # Allow test cleanup
+    - text: "os.RemoveAll|db.Close"
+      path: _test\.go
+      linters:
+        - errcheck
+    
+    # Allow test assertion patterns
+    - text: "LastInsertId.*not checked"
+      path: _test\.go
+      linters:
+        - errcheck
+  
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false

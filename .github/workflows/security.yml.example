@@ -1,0 +1,58 @@
+name: Security Analysis
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+    
+    - name: Install tools
+      run: |
+        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+    
+    - name: Static Security Analysis
+      run: |
+        golangci-lint run --enable-only=gosec,depguard,forbidigo,contextcheck,containedctx,noctx,errcheck,bodyclose,rowserrcheck,sqlclosecheck
+    
+    - name: Vulnerability Scan
+      run: |
+        govulncheck ./...
+    
+    - name: Combined Security Check
+      run: |
+        ./scripts/security-check.sh
+    
+    # Optional: Upload security report
+    - name: Generate Security Report
+      if: always()
+      run: |
+        echo "# Security Analysis Report" > security-report.md
+        echo "" >> security-report.md
+        echo "## Static Analysis Results" >> security-report.md
+        golangci-lint run --enable-only=gosec,depguard,forbidigo,contextcheck,containedctx,noctx,errcheck,bodyclose,rowserrcheck,sqlclosecheck --out-format=github-actions >> security-report.md || true
+        echo "" >> security-report.md
+        echo "## Vulnerability Scan Results" >> security-report.md
+        govulncheck -format json ./... >> vuln-results.json || true
+    
+    - name: Upload Security Report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-report
+        path: |
+          security-report.md
+          vuln-results.json
