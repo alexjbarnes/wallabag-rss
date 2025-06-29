@@ -19,6 +19,7 @@ type Worker struct {
 	rssProcessor   rss.Processorer
 	wallabagClient wallabag.Clienter
 	stopChan       chan struct{}
+	priorityQueue  chan int // Channel for immediate feed processing
 }
 
 // NewWorker creates a new Worker instance.
@@ -28,6 +29,7 @@ func NewWorker(store database.Storer, rssProcessor rss.Processorer, wallabagClie
 		rssProcessor:   rssProcessor,
 		wallabagClient: wallabagClient,
 		stopChan:       make(chan struct{}),
+		priorityQueue:  make(chan int, 100), // Buffered channel to prevent blocking
 	}
 }
 
@@ -35,12 +37,14 @@ func NewWorker(store database.Storer, rssProcessor rss.Processorer, wallabagClie
 func (w *Worker) Start() {
 	logging.Info("Worker started")
 	go w.run()
+	go w.processPriorityQueue()
 }
 
 // Stop signals the worker to stop its polling loop.
 func (w *Worker) Stop() {
 	logging.Info("Worker stopping...")
 	close(w.stopChan)
+	// Note: We don't close priorityQueue to avoid panic if QueueFeedForImmediate is called during shutdown
 }
 
 func (w *Worker) run() {
@@ -72,6 +76,75 @@ func (w *Worker) run() {
 	}
 }
 
+// processPriorityQueue handles immediate feed processing requests
+func (w *Worker) processPriorityQueue() {
+	for {
+		select {
+		case feedID := <-w.priorityQueue:
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			
+			logging.Info("Processing priority feed from queue", "feed_id", feedID)
+			
+			if err := w.processSingleFeedByID(ctx, feedID); err != nil {
+				logging.Error("Failed to process priority feed",
+					"error", err,
+					"feed_id", feedID)
+			}
+			
+			cancel()
+			
+		case <-w.stopChan:
+			logging.Info("Priority queue processor stopped")
+			return
+		}
+	}
+}
+
+// QueueFeedForImmediate adds a feed to the priority queue for immediate processing
+func (w *Worker) QueueFeedForImmediate(feedID int) {
+	select {
+	case w.priorityQueue <- feedID:
+		logging.Info("Feed queued for immediate processing", "feed_id", feedID)
+	default:
+		// Channel is full, log warning but don't block
+		logging.Warn("Priority queue is full, feed will be processed in next scheduled run",
+			"feed_id", feedID,
+			"queue_capacity", cap(w.priorityQueue))
+	}
+}
+
+// QueueAllFeedsForImmediate queues all feeds for immediate processing (used for manual sync)
+func (w *Worker) QueueAllFeedsForImmediate(ctx context.Context) error {
+	feeds, err := w.store.GetFeeds(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get feeds: %w", err)
+	}
+	
+	queuedCount := 0
+	for _, feed := range feeds {
+		select {
+		case w.priorityQueue <- feed.ID:
+			queuedCount++
+		default:
+			logging.Warn("Priority queue full, remaining feeds will sync on schedule",
+				"queued", queuedCount,
+				"total", len(feeds))
+			break
+		}
+	}
+	
+	logging.Info("Queued feeds for immediate processing",
+		"queued_count", queuedCount,
+		"total_count", len(feeds))
+	
+	return nil
+}
+
+// GetQueueStats returns statistics about the priority queue
+func (w *Worker) GetQueueStats() (queueLength int, queueCapacity int) {
+	return len(w.priorityQueue), cap(w.priorityQueue)
+}
+
 // ProcessFeeds fetches all active feeds and processes them.
 func (w *Worker) ProcessFeeds() {
 	w.ProcessFeedsWithContext(context.Background())
@@ -97,6 +170,22 @@ func (w *Worker) ProcessFeedsWithContext(ctx context.Context) {
 		w.processSingleFeed(ctx, &feed)
 	}
 	logging.Info("Processing feeds completed")
+}
+
+// processSingleFeedByID processes a single feed by its ID immediately
+func (w *Worker) processSingleFeedByID(ctx context.Context, feedID int) error {
+	feed, err := w.store.GetFeedByID(ctx, feedID)
+	if err != nil {
+		return fmt.Errorf("store.GetFeedByID: %w", err)
+	}
+
+	logging.Info("Processing single feed immediately",
+		"feed_id", feed.ID,
+		"feed_name", feed.Name,
+		"feed_url", feed.URL)
+
+	w.processSingleFeed(ctx, feed)
+	return nil
 }
 
 // shouldStopProcessing checks if context is canceled

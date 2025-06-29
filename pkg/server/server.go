@@ -169,6 +169,9 @@ func (s *Server) handleFeedsPost(writer http.ResponseWriter, request *http.Reque
 		"feed_url", feed.URL,
 		"sync_mode", feed.SyncMode)
 
+	// Queue the new feed for immediate processing
+	s.worker.QueueFeedForImmediate(feed.ID)
+
 	s.renderFeedRow(writer, request, &feed)
 }
 
@@ -216,6 +219,17 @@ func (s *Server) handleFeedsPut(writer http.ResponseWriter, request *http.Reques
 		"feed_id", feed.ID,
 		"feed_name", feed.Name,
 		"feed_url", feed.URL)
+
+	// Queue the updated feed for immediate re-sync if URL or sync settings changed
+	syncSettingsChanged := existingFeed.URL != feed.URL || 
+		existingFeed.SyncMode != feed.SyncMode || 
+		!equalIntPointers(existingFeed.SyncCount, feed.SyncCount) ||
+		!equalTimePointers(existingFeed.SyncDateFrom, feed.SyncDateFrom)
+		
+	if syncSettingsChanged {
+		s.worker.QueueFeedForImmediate(feed.ID)
+		logging.Info("Feed queued for re-sync due to configuration changes", "feed_id", feed.ID)
+	}
 
 	s.renderFeedRow(writer, request, &feed)
 }
@@ -504,12 +518,12 @@ func (s *Server) handleSync(writer http.ResponseWriter, request *http.Request) {
 
 	logging.Info("Manual sync triggered by UI")
 
-	// Create context with timeout to prevent goroutine leak
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	go func() {
-		defer cancel() // Ensure context is canceled when done
-		s.worker.ProcessFeedsWithContext(ctx)
-	}()
+	// Queue all feeds for immediate processing
+	if err := s.worker.QueueAllFeedsForImmediate(request.Context()); err != nil {
+		logging.Error("Failed to queue feeds for sync", "error", err)
+		http.Error(writer, "Failed to initiate sync", http.StatusInternalServerError)
+		return
+	}
 
 	writer.WriteHeader(http.StatusOK)
 	if _, err := writer.Write([]byte("Sync initiated.")); err != nil {
@@ -601,4 +615,25 @@ func (s *Server) formatPollIntervalResponse(intervalInMinutes int) string {
 	return fmt.Sprintf(`<span id="default-poll-interval-display">%s</span>`, display)
 }
 
+// equalIntPointers compares two int pointers for equality
+func equalIntPointers(a, b *int) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+// equalTimePointers compares two time pointers for equality
+func equalTimePointers(a, b *time.Time) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Equal(*b)
+}
 

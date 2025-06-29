@@ -1,7 +1,9 @@
 package worker_test
 
 import (
+	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -551,4 +553,229 @@ func TestWorker_StopChannel(t *testing.T) {
 
 	// Cannot test private stopChan field from external package
 	assert.NotNil(t, w)
+}
+
+func TestWorker_QueueFeedForImmediate(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockStore := mocks.NewMockStorer(ctrl)
+	mockProcessor := rssmocks.NewMockProcessorer(ctrl)
+	mockClient := wallabagmocks.NewMockClienter(ctrl)
+
+	// Setup expectations for worker start
+	mockStore.EXPECT().GetFeeds(gomock.Any()).Return([]models.Feed{}, nil).AnyTimes()
+	mockStore.EXPECT().GetDefaultPollInterval(gomock.Any()).Return(60, nil).AnyTimes()
+
+	w := worker.NewWorker(mockStore, mockProcessor, mockClient)
+	w.Start()
+	defer w.Stop()
+
+	// Test queuing a feed
+	testFeed := models.Feed{
+		ID:   123,
+		Name: "Test Feed",
+		URL:  "https://example.com/feed.xml",
+	}
+
+	// Expect the feed to be fetched and processed
+	mockStore.EXPECT().GetFeedByID(gomock.Any(), 123).Return(&testFeed, nil)
+	mockProcessor.EXPECT().FetchAndParseWithSyncOptions(
+		testFeed.URL,
+		testFeed.SyncMode,
+		testFeed.SyncCount,
+		testFeed.SyncDateFrom,
+	).Return([]rss.Article{}, nil)
+	mockStore.EXPECT().UpdateFeedLastFetched(gomock.Any(), testFeed.ID).Return(nil)
+	mockStore.EXPECT().MarkFeedInitialSyncCompleted(gomock.Any(), testFeed.ID).Return(nil)
+
+	// Queue the feed
+	w.QueueFeedForImmediate(123)
+
+	// Give time for processing
+	time.Sleep(200 * time.Millisecond)
+}
+
+func TestWorker_QueueFeedForImmediate_QueueFull(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockStore := mocks.NewMockStorer(ctrl)
+	mockProcessor := rssmocks.NewMockProcessorer(ctrl)
+	mockClient := wallabagmocks.NewMockClienter(ctrl)
+
+	// Setup minimal expectations
+	mockStore.EXPECT().GetFeeds(gomock.Any()).Return([]models.Feed{}, nil).AnyTimes()
+	mockStore.EXPECT().GetDefaultPollInterval(gomock.Any()).Return(60, nil).AnyTimes()
+
+	w := worker.NewWorker(mockStore, mockProcessor, mockClient)
+	// Don't start the worker so queue won't be processed
+
+	// Fill the queue (capacity is 100)
+	for i := 0; i < 100; i++ {
+		w.QueueFeedForImmediate(i)
+	}
+
+	// Check queue is full
+	length, capacity := w.GetQueueStats()
+	assert.Equal(t, 100, length)
+	assert.Equal(t, 100, capacity)
+
+	// Try to add one more - should not panic or block
+	assert.NotPanics(t, func() {
+		w.QueueFeedForImmediate(101)
+	})
+
+	// Queue should still be at capacity
+	length, _ = w.GetQueueStats()
+	assert.Equal(t, 100, length)
+}
+
+func TestWorker_QueueAllFeedsForImmediate(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockStore := mocks.NewMockStorer(ctrl)
+	mockProcessor := rssmocks.NewMockProcessorer(ctrl)
+	mockClient := wallabagmocks.NewMockClienter(ctrl)
+
+	testFeeds := []models.Feed{
+		{ID: 1, Name: "Feed 1"},
+		{ID: 2, Name: "Feed 2"},
+		{ID: 3, Name: "Feed 3"},
+	}
+
+	// Setup expectations
+	mockStore.EXPECT().GetFeeds(gomock.Any()).Return([]models.Feed{}, nil).Times(1)
+	mockStore.EXPECT().GetDefaultPollInterval(gomock.Any()).Return(60, nil).AnyTimes()
+
+	w := worker.NewWorker(mockStore, mockProcessor, mockClient)
+	w.Start()
+	defer w.Stop()
+
+	// Expect GetFeeds to be called for QueueAllFeedsForImmediate
+	mockStore.EXPECT().GetFeeds(gomock.Any()).Return(testFeeds, nil)
+
+	// Expect each feed to be processed
+	for _, feed := range testFeeds {
+		feedCopy := feed // Capture for closure
+		mockStore.EXPECT().GetFeedByID(gomock.Any(), feedCopy.ID).Return(&feedCopy, nil)
+		mockProcessor.EXPECT().FetchAndParseWithSyncOptions(
+			gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
+		).Return([]rss.Article{}, nil)
+		mockStore.EXPECT().UpdateFeedLastFetched(gomock.Any(), feedCopy.ID).Return(nil)
+		mockStore.EXPECT().MarkFeedInitialSyncCompleted(gomock.Any(), feedCopy.ID).Return(nil)
+	}
+
+	// Queue all feeds
+	err := w.QueueAllFeedsForImmediate(context.Background())
+	assert.NoError(t, err)
+
+	// Give time for processing
+	time.Sleep(300 * time.Millisecond)
+}
+
+func TestWorker_QueueAllFeedsForImmediate_Error(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockStore := mocks.NewMockStorer(ctrl)
+	mockProcessor := rssmocks.NewMockProcessorer(ctrl)
+	mockClient := wallabagmocks.NewMockClienter(ctrl)
+
+	w := worker.NewWorker(mockStore, mockProcessor, mockClient)
+
+	// Expect GetFeeds to fail when QueueAllFeedsForImmediate is called
+	mockStore.EXPECT().GetFeeds(gomock.Any()).Return(nil, errors.New("database error"))
+
+	// Queue all feeds should return error
+	err := w.QueueAllFeedsForImmediate(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get feeds")
+}
+
+func TestWorker_ProcessSingleFeedByID_Error(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockStore := mocks.NewMockStorer(ctrl)
+	mockProcessor := rssmocks.NewMockProcessorer(ctrl)
+	mockClient := wallabagmocks.NewMockClienter(ctrl)
+
+	// Setup expectations
+	mockStore.EXPECT().GetFeeds(gomock.Any()).Return([]models.Feed{}, nil).AnyTimes()
+	mockStore.EXPECT().GetDefaultPollInterval(gomock.Any()).Return(60, nil).AnyTimes()
+
+	w := worker.NewWorker(mockStore, mockProcessor, mockClient)
+	w.Start()
+	defer w.Stop()
+
+	// Expect GetFeedByID to fail
+	mockStore.EXPECT().GetFeedByID(gomock.Any(), 999).Return(nil, errors.New("feed not found"))
+
+	// Queue the feed - error should be logged but not panic
+	assert.NotPanics(t, func() {
+		w.QueueFeedForImmediate(999)
+	})
+
+	// Give time for processing
+	time.Sleep(200 * time.Millisecond)
+}
+
+func TestWorker_GetQueueStats(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockStore := mocks.NewMockStorer(ctrl)
+	mockProcessor := rssmocks.NewMockProcessorer(ctrl)
+	mockClient := wallabagmocks.NewMockClienter(ctrl)
+
+	w := worker.NewWorker(mockStore, mockProcessor, mockClient)
+
+	// Initially empty
+	length, capacity := w.GetQueueStats()
+	assert.Equal(t, 0, length)
+	assert.Equal(t, 100, capacity)
+
+	// Add some items
+	w.QueueFeedForImmediate(1)
+	w.QueueFeedForImmediate(2)
+
+	length, capacity = w.GetQueueStats()
+	assert.Equal(t, 2, length)
+	assert.Equal(t, 100, capacity)
+}
+
+func TestWorker_ConcurrentQueueOperations(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockStore := mocks.NewMockStorer(ctrl)
+	mockProcessor := rssmocks.NewMockProcessorer(ctrl)
+	mockClient := wallabagmocks.NewMockClienter(ctrl)
+
+	// Setup expectations
+	mockStore.EXPECT().GetFeeds(gomock.Any()).Return([]models.Feed{}, nil).AnyTimes()
+	mockStore.EXPECT().GetDefaultPollInterval(gomock.Any()).Return(60, nil).AnyTimes()
+
+	w := worker.NewWorker(mockStore, mockProcessor, mockClient)
+
+	// Start multiple goroutines adding to queue
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				w.QueueFeedForImmediate(id*10 + j)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Check queue has items (may not be exactly 100 due to concurrent access)
+	length, _ := w.GetQueueStats()
+	assert.GreaterOrEqual(t, length, 50) // At least some should be queued
+	assert.LessOrEqual(t, length, 100)   // Can't exceed capacity
 }
