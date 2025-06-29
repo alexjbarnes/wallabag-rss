@@ -1075,7 +1075,7 @@ func TestServer_handleFeedsPut(t *testing.T) {
 				assert.Equal(t, "https://example.com/updated.xml", feed.URL)
 				assert.Equal(t, 3, feed.PollInterval)
 				assert.Equal(t, models.TimeUnitDays, feed.PollIntervalUnit)
-				assert.Equal(t, models.SyncModeCount, feed.SyncMode)
+				assert.Equal(t, existingFeed.SyncMode, feed.SyncMode) // Should preserve existing sync mode
 				// Should preserve existing fields
 				assert.Equal(t, existingFeed.LastFetched, feed.LastFetched)
 				assert.Equal(t, existingFeed.InitialSyncDone, feed.InitialSyncDone)
@@ -1086,14 +1086,12 @@ func TestServer_handleFeedsPut(t *testing.T) {
 		// Mock for renderFeedRow
 		mockStore.EXPECT().GetDefaultPollInterval(gomock.Any()).Return(60, nil).Times(1)
 		
-		// Create form data
+		// Create form data - only fields available in edit form
 		formData := make(map[string][]string)
 		formData["name"] = []string{"Updated Feed Name"}
 		formData["url"] = []string{"https://example.com/updated.xml"}
 		formData["poll_interval"] = []string{"3"}
 		formData["poll_interval_unit"] = []string{"days"}
-		formData["sync_mode"] = []string{"count"}
-		formData["sync_count"] = []string{"10"}
 		
 		req := httptest.NewRequest("PUT", "/feeds/42", http.NoBody)
 		req.Form = formData

@@ -62,7 +62,7 @@ func (s *Server) Start(port string) error {
 	
 	
 	mux.HandleFunc("/", s.AddSecurityHeaders(s.HandleIndex))
-	mux.HandleFunc("/feeds", s.AddSecurityHeaders(s.csrfProtection(s.handleFeeds)))
+	mux.HandleFunc("/feeds/", s.AddSecurityHeaders(s.csrfProtection(s.handleFeeds)))
 	mux.HandleFunc("/feeds/edit/", s.AddSecurityHeaders(s.handleEditFeed))
 	mux.HandleFunc("/feeds/row/", s.AddSecurityHeaders(s.handleFeedRow))
 	mux.HandleFunc("/articles", s.AddSecurityHeaders(s.handleArticles))
@@ -108,15 +108,27 @@ func (s *Server) HandleIndex(writer http.ResponseWriter, request *http.Request) 
 }
 
 func (s *Server) handleFeeds(writer http.ResponseWriter, request *http.Request) {
+	// Check if this is a request for a specific feed (has ID in path)
+	// Path will be either "/feeds/" (collection) or "/feeds/123" (specific feed)
+	if request.URL.Path != "/feeds/" && len(request.URL.Path) > len("/feeds/") {
+		// This is a request for a specific feed: /feeds/{id}
+		switch request.Method {
+		case "PUT":
+			s.handleFeedsPut(writer, request)
+		case "DELETE":
+			s.handleFeedsDelete(writer, request)
+		default:
+			http.Error(writer, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	// This is a request for the feeds collection: /feeds/ or /feeds
 	switch request.Method {
 	case http.MethodGet:
 		s.handleFeedsGet(writer, request)
 	case http.MethodPost:
 		s.handleFeedsPost(writer, request)
-	case "PUT":
-		s.handleFeedsPut(writer, request)
-	case "DELETE":
-		s.handleFeedsDelete(writer, request)
 	default:
 		http.Error(writer, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -182,7 +194,6 @@ func (s *Server) handleFeedsPut(writer http.ResponseWriter, request *http.Reques
 	id, err := s.ExtractFeedIDFromPath(request.URL.Path)
 	if err != nil {
 		http.Error(writer, "Invalid feed ID", http.StatusBadRequest)
-
 		return
 	}
 
@@ -192,20 +203,25 @@ func (s *Server) handleFeedsPut(writer http.ResponseWriter, request *http.Reques
 			"error", fmt.Errorf("store.GetFeedByID: %w", err),
 			"feed_id", id)
 		http.Error(writer, "Feed not found", http.StatusNotFound)
-
 		return
 	}
 
 	if err := request.ParseForm(); err != nil {
 		http.Error(writer, "Failed to parse form", http.StatusBadRequest)
-
 		return
 	}
 
-	feed := s.parseFeedFromForm(request)
-	feed.ID = id
-	feed.LastFetched = existingFeed.LastFetched
-	feed.InitialSyncDone = existingFeed.InitialSyncDone
+	// Parse only the editable fields from the edit form
+	formValues := s.ExtractFormValues(request)
+	s.LogFormValues(&formValues)
+
+	pollInterval, pollIntervalUnit := s.ParsePollInterval(formValues.PollIntervalStr, formValues.PollIntervalUnitStr)
+
+	// Create updated feed preserving sync settings from existing feed
+	feed := *existingFeed
+	feed.Name = formValues.Name
+	feed.URL = formValues.URL
+	feed.SetPollInterval(pollInterval, pollIntervalUnit)
 
 	if err := s.store.UpdateFeed(request.Context(), &feed); err != nil {
 		logging.Error("Failed to update feed",
@@ -213,7 +229,6 @@ func (s *Server) handleFeedsPut(writer http.ResponseWriter, request *http.Reques
 			"feed_id", feed.ID,
 			"feed_name", feed.Name)
 		http.Error(writer, "Failed to update feed", http.StatusInternalServerError)
-
 		return
 	}
 
@@ -222,15 +237,10 @@ func (s *Server) handleFeedsPut(writer http.ResponseWriter, request *http.Reques
 		"feed_name", feed.Name,
 		"feed_url", feed.URL)
 
-	// Queue the updated feed for immediate re-sync if URL or sync settings changed
-	syncSettingsChanged := existingFeed.URL != feed.URL || 
-		existingFeed.SyncMode != feed.SyncMode || 
-		!EqualIntPointers(existingFeed.SyncCount, feed.SyncCount) ||
-		!EqualTimePointers(existingFeed.SyncDateFrom, feed.SyncDateFrom)
-		
-	if syncSettingsChanged {
+	// Queue the updated feed for immediate re-sync if URL changed
+	if existingFeed.URL != feed.URL {
 		s.worker.QueueFeedForImmediate(feed.ID)
-		logging.Info("Feed queued for re-sync due to configuration changes", "feed_id", feed.ID)
+		logging.Info("Feed queued for re-sync due to URL change", "feed_id", feed.ID)
 	}
 
 	s.renderFeedRow(writer, request, &feed)

@@ -134,23 +134,11 @@ templ Feeds(data FeedsData) {
 				}
 			}
 			
-			function toggleEditSyncOptions(feedId) {
-				var syncMode = document.getElementById('editSyncMode-' + feedId);
-				var countDiv = document.getElementById('editSyncCountDiv-' + feedId);
-				var dateDiv = document.getElementById('editSyncDateFromDiv-' + feedId);
-				
-				if (syncMode && countDiv && dateDiv) {
-					var modeValue = syncMode.value;
-					countDiv.style.display = modeValue === 'count' ? 'block' : 'none';
-					dateDiv.style.display = modeValue === 'date_from' ? 'block' : 'none';
-				}
-			}
 			
 			// Make functions globally available
 			window.togglePollInterval = togglePollInterval;
 			window.toggleSyncOptions = toggleSyncOptions;
 			window.toggleEditPollInterval = toggleEditPollInterval;
-			window.toggleEditSyncOptions = toggleEditSyncOptions;
 			
 			function initializeEverything() {
 				// Initialize main form
@@ -170,21 +158,12 @@ templ Feeds(data FeedsData) {
 				
 				// Initialize edit forms
 				var editPollSelects = document.querySelectorAll('[id^="editPollIntervalUnit-"]');
-				var editSyncSelects = document.querySelectorAll('[id^="editSyncMode-"]');
 				
 				editPollSelects.forEach(function(select) {
 					var feedId = select.id.replace('editPollIntervalUnit-', '');
 					toggleEditPollInterval(feedId);
 					select.addEventListener('change', function() {
 						toggleEditPollInterval(feedId);
-					});
-				});
-				
-				editSyncSelects.forEach(function(select) {
-					var feedId = select.id.replace('editSyncMode-', '');
-					toggleEditSyncOptions(feedId);
-					select.addEventListener('change', function() {
-						toggleEditSyncOptions(feedId);
 					});
 				});
 			}
@@ -255,8 +234,7 @@ type FeedEditData struct {
 templ FeedEditForm(data FeedEditData) {
 	<div id={ "feed-" + strconv.Itoa(data.Feed.ID) } class="card mb-2">
 		<div class="card-body">
-			<form hx-put={ "/feeds/" + strconv.Itoa(data.Feed.ID) } hx-target={ "#feed-" + strconv.Itoa(data.Feed.ID) } hx-swap="outerHTML">
-				<input type="hidden" name="csrf_token" value={ data.CSRFToken }/>
+			<form hx-put={ "/feeds/" + strconv.Itoa(data.Feed.ID) } hx-target={ "#feed-" + strconv.Itoa(data.Feed.ID) } hx-swap="outerHTML" hx-headers={ "{\"X-CSRF-Token\": \"" + data.CSRFToken + "\"}" }>
 				<div class="mb-3">
 					<label for={ "editFeedName-" + strconv.Itoa(data.Feed.ID) } class="form-label">Feed Name</label>
 					<input type="text" class="form-control" id={ "editFeedName-" + strconv.Itoa(data.Feed.ID) } name="name" value={ data.Feed.Name } required/>
@@ -292,23 +270,6 @@ templ FeedEditForm(data FeedEditData) {
 							</select>
 						</div>
 					</div>
-				</div>
-				<div class="mb-3">
-					<label for={ "editSyncMode-" + strconv.Itoa(data.Feed.ID) } class="form-label">Historical Articles Sync</label>
-					<select class="form-control" id={ "editSyncMode-" + strconv.Itoa(data.Feed.ID) } name="sync_mode">
-						<option value="none" if data.Feed.SyncMode == "none" { selected }>None - Only sync new articles from now</option>
-						<option value="all" if data.Feed.SyncMode == "all" { selected }>All - Sync all available articles</option>
-						<option value="count" if data.Feed.SyncMode == "count" { selected }>Count - Sync last N articles</option>
-						<option value="date_from" if data.Feed.SyncMode == "date_from" { selected }>Date From - Sync articles from specific date</option>
-					</select>
-				</div>
-				<div class="mb-3" id={ "editSyncCountDiv-" + strconv.Itoa(data.Feed.ID) } style={ "display: " + templ.SafeCSS(func() string { if data.Feed.SyncMode == "count" { return "block" } else { return "none" } }()) + ";" }>
-					<label for={ "editSyncCount-" + strconv.Itoa(data.Feed.ID) } class="form-label">Number of Articles</label>
-					<input type="number" class="form-control" id={ "editSyncCount-" + strconv.Itoa(data.Feed.ID) } name="sync_count" min="1" max="1000" value={ func() string { if data.Feed.SyncCount != nil { return strconv.Itoa(*data.Feed.SyncCount) } else { return "10" } }() }/>
-				</div>
-				<div class="mb-3" id={ "editSyncDateFromDiv-" + strconv.Itoa(data.Feed.ID) } style={ "display: " + templ.SafeCSS(func() string { if data.Feed.SyncMode == "date_from" { return "block" } else { return "none" } }()) + ";" }>
-					<label for={ "editSyncDateFrom-" + strconv.Itoa(data.Feed.ID) } class="form-label">Sync From Date</label>
-					<input type="date" class="form-control" id={ "editSyncDateFrom-" + strconv.Itoa(data.Feed.ID) } name="sync_date_from" value={ func() string { if data.Feed.SyncDateFrom != nil { return data.Feed.SyncDateFrom.Format("2006-01-02") } else { return "" } }() }/>
 				</div>
 				<button type="submit" class="btn btn-primary me-2">Save</button>
 				<button type="button" class="btn btn-secondary" hx-get={ "/feeds/row/" + strconv.Itoa(data.Feed.ID) } hx-target={ "#feed-" + strconv.Itoa(data.Feed.ID) } hx-swap="outerHTML">Cancel</button>
