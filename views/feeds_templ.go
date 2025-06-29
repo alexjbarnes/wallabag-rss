@@ -311,7 +311,7 @@ func FeedRow(feed models.Feed, defaultPollInterval int, csrfToken string) templ.
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var16 string
-			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(feed.LastFetched.Format("2006-01-02 15:04:05"))
+			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(feed.LastFetched.Format("02/01/2006 15:04:05"))
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `views/feeds.templ`, Line: 238, Col: 119}
 			}

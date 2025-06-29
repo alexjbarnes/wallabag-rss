@@ -235,7 +235,7 @@ templ FeedRow(feed models.Feed, defaultPollInterval int, csrfToken string) {
 					}
 				</small></p>
 				if feed.LastFetched != nil {
-					<p class="card-text mb-0"><small class="text-muted">Last Fetched: { feed.LastFetched.Format("2006-01-02 15:04:05") }</small></p>
+					<p class="card-text mb-0"><small class="text-muted">Last Fetched: { feed.LastFetched.Format("02/01/2006 15:04:05") }</small></p>
 				}
 			</div>
 			<div>

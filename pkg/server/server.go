@@ -479,7 +479,7 @@ func (s *Server) handleArticles(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	data := views.ArticlesData{
-		PageData: views.PageData{Title: "Processed Articles"},
+		PageData: views.PageData{Title: "Processed Articles", CSRFToken: s.getCSRFToken()},
 		Articles: articles,
 	}
 	if err := views.Articles(data).Render(request.Context(), writer); err != nil {

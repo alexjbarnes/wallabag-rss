@@ -14,7 +14,8 @@ templ Articles(data ArticlesData) {
 			<h1>Processed Articles</h1>
 			<p>List of articles fetched from RSS feeds and sent to Wallabag.</p>
 			<div id="articles-list">
-				<table class="table table-striped">
+				<div class="table-responsive">
+					<table class="table table-striped">
 					<thead>
 						<tr>
 							<th>Title</th>
@@ -39,12 +40,12 @@ templ Articles(data ArticlesData) {
 									</td>
 									<td>
 										if article.PublishedAt != nil {
-											{ article.PublishedAt.Format("2006-01-02 15:04:05") }
+											{ article.PublishedAt.Format("02/01/2006 15:04:05") }
 										} else {
 											N/A
 										}
 									</td>
-									<td>{ article.CreatedAt.Format("2006-01-02 15:04:05") }</td>
+									<td>{ article.CreatedAt.Format("02/01/2006 15:04:05") }</td>
 								</tr>
 							}
 						} else {
@@ -54,6 +55,7 @@ templ Articles(data ArticlesData) {
 						}
 					</tbody>
 				</table>
+				</div>
 			</div>
 		</div>
 	}
