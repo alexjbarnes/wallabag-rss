@@ -40,7 +40,7 @@ func initializeLogging() {
 	
 	logFormat := os.Getenv("LOG_FORMAT")
 	useJSON := true // Default to JSON format
-	if strings.ToLower(logFormat) == "text" {
+	if strings.EqualFold(logFormat, "text") {
 		useJSON = false
 	}
 	

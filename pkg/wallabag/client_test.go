@@ -13,7 +13,7 @@ import (
 
 func TestNewClient(t *testing.T) {
 	client := wallabag.NewClient(
-		"https://wallabag.example.com",
+		"https://example.com",
 		"client123",
 		"secret456",
 		"testuser",

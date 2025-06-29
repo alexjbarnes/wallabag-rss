@@ -22,12 +22,14 @@ type CSRFToken struct {
 
 type CSRFManager struct {
 	tokens map[string]CSRFToken
+	stop   chan struct{}
 	mutex  sync.RWMutex
 }
 
 func NewCSRFManager() *CSRFManager {
 	manager := &CSRFManager{
 		tokens: make(map[string]CSRFToken),
+		stop:   make(chan struct{}),
 	}
 	// Clean up expired tokens every hour
 	go manager.cleanupExpiredTokens()
@@ -81,16 +83,25 @@ func (c *CSRFManager) cleanupExpiredTokens() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		c.mutex.Lock()
-		now := time.Now()
-		for token, csrfToken := range c.tokens {
-			if now.After(csrfToken.ExpiresAt) {
-				delete(c.tokens, token)
+	for {
+		select {
+		case <-c.stop:
+			return
+		case <-ticker.C:
+			c.mutex.Lock()
+			now := time.Now()
+			for token, csrfToken := range c.tokens {
+				if now.After(csrfToken.ExpiresAt) {
+					delete(c.tokens, token)
+				}
 			}
+			c.mutex.Unlock()
 		}
-		c.mutex.Unlock()
 	}
+}
+
+func (c *CSRFManager) Stop() {
+	close(c.stop)
 }
 
 // CSRF middleware for protecting state-changing operations

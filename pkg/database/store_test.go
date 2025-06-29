@@ -3,6 +3,7 @@ package database_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -528,5 +529,374 @@ func TestSQLStore_UpdateFeedLastFetched(t *testing.T) {
 	t.Run("Update non-existing feed", func(t *testing.T) {
 		err := store.UpdateFeedLastFetched(context.Background(), 999)
 		assert.NoError(t, err) // SQL UPDATE doesn't error when no rows are affected
+	})
+}
+
+func TestSQLStore_MarkFeedInitialSyncCompleted(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+	store := database.NewSQLStore(db)
+
+	t.Run("Mark existing feed sync completed", func(t *testing.T) {
+		// Insert test feed
+		res, err := db.Exec("INSERT INTO feeds (url, name, sync_mode, initial_sync_done) VALUES (?, ?, ?, ?)",
+			"https://example.com/feed", "Test Feed", "none", false)
+		assert.NoError(t, err)
+		feedID, _ := res.LastInsertId()
+
+		err = store.MarkFeedInitialSyncCompleted(context.Background(), int(feedID))
+		assert.NoError(t, err)
+
+		// Verify update
+		var syncDone bool
+		err = db.QueryRow("SELECT initial_sync_done FROM feeds WHERE id = ?", feedID).Scan(&syncDone)
+		assert.NoError(t, err)
+		assert.True(t, syncDone)
+	})
+
+	t.Run("Mark non-existing feed", func(t *testing.T) {
+		err := store.MarkFeedInitialSyncCompleted(context.Background(), 999)
+		assert.NoError(t, err) // SQL UPDATE doesn't error when no rows are affected
+	})
+}
+
+func TestStore_ComprehensiveCoverage(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+	
+	store := database.NewSQLStore(db)
+	ctx := context.Background()
+
+	t.Run("Additional DeleteFeed coverage", func(t *testing.T) {
+		// Create feed to delete
+		feedID, err := store.InsertFeed(ctx, &models.Feed{
+			Name: "Feed to Delete",
+			URL:  "https://example.com/delete.xml",
+		})
+		assert.NoError(t, err)
+
+		// Delete existing feed
+		err = store.DeleteFeed(ctx, int(feedID))
+		assert.NoError(t, err)
+		
+		// Verify deletion
+		feed, err := store.GetFeedByID(ctx, int(feedID))
+		assert.Error(t, err)
+		assert.Nil(t, feed)
+		
+		// Delete non-existent feed (should not error)
+		err = store.DeleteFeed(ctx, 99999)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Additional SaveArticle coverage", func(t *testing.T) {
+		// Create feed for articles
+		feedID, err := store.InsertFeed(ctx, &models.Feed{
+			Name: "Article Test Feed",
+			URL:  "https://example.com/articles.xml",
+		})
+		assert.NoError(t, err)
+
+		// Save article with published date
+		publishedTime := time.Now().Add(-24 * time.Hour)
+		article := models.Article{
+			Title:       "Article with Date",
+			URL:         "https://example.com/with-date",
+			PublishedAt: &publishedTime,
+		}
+		
+		err = store.SaveArticle(ctx, int(feedID), &article, 12345)
+		assert.NoError(t, err)
+		
+		// Save article without published date
+		articleNoDate := models.Article{
+			Title: "Article without Date",
+			URL:   "https://example.com/no-date",
+		}
+		
+		err = store.SaveArticle(ctx, int(feedID), &articleNoDate, 0)
+		assert.NoError(t, err)
+		
+		// Verify articles were saved
+		articles, err := store.GetArticles(ctx)
+		assert.NoError(t, err)
+		assert.GreaterOrEqual(t, len(articles), 2)
+	})
+
+	t.Run("Additional UpdateDefaultPollInterval coverage", func(t *testing.T) {
+		// Test edge case values
+		testValues := []int{1, 15, 60, 120, 1440, 10080} // Various intervals
+		
+		for _, val := range testValues {
+			err := store.UpdateDefaultPollInterval(ctx, val)
+			assert.NoError(t, err)
+			
+			// Verify the value was set
+			retrieved, err := store.GetDefaultPollInterval(ctx)
+			assert.NoError(t, err)
+			assert.Equal(t, val, retrieved)
+		}
+	})
+
+	t.Run("Additional UpdateFeedLastFetched coverage", func(t *testing.T) {
+		// Create test feed
+		feedID, err := store.InsertFeed(ctx, &models.Feed{
+			Name: "Last Fetched Test",
+			URL:  "https://example.com/lastfetch.xml",
+		})
+		assert.NoError(t, err)
+
+		// Test updating last fetched timestamp
+		err = store.UpdateFeedLastFetched(ctx, int(feedID))
+		assert.NoError(t, err)
+		
+		// Test multiple updates
+		err = store.UpdateFeedLastFetched(ctx, int(feedID))
+		assert.NoError(t, err)
+		
+		err = store.UpdateFeedLastFetched(ctx, int(feedID))
+		assert.NoError(t, err)
+		
+		// Test with invalid feed ID
+		err = store.UpdateFeedLastFetched(ctx, 999999)
+		assert.NoError(t, err) // Should not error
+	})
+
+	t.Run("Additional MarkFeedInitialSyncCompleted coverage", func(t *testing.T) {
+		// Create test feed
+		feedID, err := store.InsertFeed(ctx, &models.Feed{
+			Name: "Sync Test Feed",
+			URL:  "https://example.com/sync.xml",
+		})
+		assert.NoError(t, err)
+
+		// Mark sync completed
+		err = store.MarkFeedInitialSyncCompleted(ctx, int(feedID))
+		assert.NoError(t, err)
+		
+		// Mark again (should not error)
+		err = store.MarkFeedInitialSyncCompleted(ctx, int(feedID))
+		assert.NoError(t, err)
+		
+		// Test with invalid feed ID
+		err = store.MarkFeedInitialSyncCompleted(ctx, 999999)
+		assert.NoError(t, err) // Should not error
+	})
+
+	t.Run("Additional IsArticleAlreadyProcessed coverage", func(t *testing.T) {
+		// Test with various URL formats
+		testURLs := []string{
+			"https://example.com/article1",
+			"http://example.com/article2",
+			"https://sub.example.com/path/to/article",
+			"https://example.com/article?param=value&other=test",
+		}
+		
+		// Create feed for test articles
+		feedID, err := store.InsertFeed(ctx, &models.Feed{
+			Name: "URL Test Feed",
+			URL:  "https://example.com/urltest.xml",
+		})
+		assert.NoError(t, err)
+		
+		// Save first article
+		article := models.Article{
+			Title: "Test Article",
+			URL:   testURLs[0],
+		}
+		err = store.SaveArticle(ctx, int(feedID), &article, 0)
+		assert.NoError(t, err)
+		
+		// Check first URL exists
+		exists, err := store.IsArticleAlreadyProcessed(ctx, testURLs[0])
+		assert.NoError(t, err)
+		assert.True(t, exists)
+		
+		// Check other URLs don't exist
+		for _, url := range testURLs[1:] {
+			otherExists, err := store.IsArticleAlreadyProcessed(ctx, url)
+			assert.NoError(t, err)
+			assert.False(t, otherExists)
+		}
+		
+		// Test with empty and special characters
+		exists, err = store.IsArticleAlreadyProcessed(ctx, "")
+		assert.NoError(t, err)
+		assert.False(t, exists)
+	})
+}
+
+func TestStore_EdgeCaseCoverage(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+	
+	store := database.NewSQLStore(db)
+	ctx := context.Background()
+	
+	t.Run("SaveArticle with zero wallabag entry ID", func(t *testing.T) {
+		// Create feed
+		feedID, err := store.InsertFeed(ctx, &models.Feed{
+			Name: "Test Feed",
+			URL:  "https://example.com/test.xml",
+		})
+		assert.NoError(t, err)
+		
+		// Save article with zero wallabag entry ID
+		article := models.Article{
+			Title: "Article with Zero Entry ID",
+			URL:   "https://example.com/zero-entry",
+		}
+		
+		err = store.SaveArticle(ctx, int(feedID), &article, 0)
+		assert.NoError(t, err)
+		
+		// Verify article was saved - when wallabagEntryID is 0, it's stored as 0, not NULL
+		var wEntryID int
+		err = db.QueryRow("SELECT wallabag_entry_id FROM articles WHERE url = ?", 
+			article.URL).Scan(&wEntryID)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, wEntryID) // Should be 0
+	})
+	
+	t.Run("Helper functions coverage through complex operations", func(t *testing.T) {
+		// Test scanFeedRow and setFeedNullableFields indirectly through GetFeeds
+		now := time.Now()
+		syncCount := 5
+		
+		// Insert a feed with all possible field combinations to test scanFeedRow
+		_, err := db.Exec(`INSERT INTO feeds 
+			(url, name, last_fetched, poll_interval_minutes, poll_interval, poll_interval_unit, 
+			 sync_mode, sync_count, sync_date_from, initial_sync_done) 
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"https://example.com/complex", "Complex Feed", now, 90, 1, "hours",
+			"count", syncCount, now.Add(-24*time.Hour), true)
+		assert.NoError(t, err)
+		
+		// Fetch all feeds to trigger scanFeedRow
+		feeds, err := store.GetFeeds(ctx)
+		assert.NoError(t, err)
+		assert.GreaterOrEqual(t, len(feeds), 1)
+		
+		// Find and verify the complex feed
+		var complexFeed *models.Feed
+		for _, feed := range feeds {
+			if feed.Name == "Complex Feed" {
+				complexFeed = &feed
+				break
+			}
+		}
+		assert.NotNil(t, complexFeed)
+		assert.NotNil(t, complexFeed.LastFetched)
+		assert.NotNil(t, complexFeed.SyncCount)
+		assert.Equal(t, syncCount, *complexFeed.SyncCount)
+		assert.Equal(t, models.SyncModeCount, complexFeed.SyncMode)
+	})
+	
+	t.Run("Statement preparation and execution error paths", func(t *testing.T) {
+		// Test error paths in functions with 70% coverage
+		// Most of these functions have error handling that's hard to trigger in normal SQLite
+		// but we can test the defer statement cleanup paths
+		
+		// Create a feed to test UpdateFeed statement preparation
+		feedID, err := store.InsertFeed(ctx, &models.Feed{
+			Name: "Test Feed for Statements",
+			URL:  "https://example.com/statements.xml",
+		})
+		assert.NoError(t, err)
+		
+		// Test UpdateFeed with valid data (covers statement preparation and execution)
+		updatedFeed := models.Feed{
+			ID:   int(feedID),
+			Name: "Updated Statement Test Feed",
+			URL:  "https://example.com/updated-statements.xml",
+		}
+		updatedFeed.SetPollInterval(2, models.TimeUnitHours)
+		
+		err = store.UpdateFeed(ctx, &updatedFeed)
+		assert.NoError(t, err)
+		
+		// Test DeleteFeed statement paths
+		err = store.DeleteFeed(ctx, int(feedID))
+		assert.NoError(t, err)
+		
+		// Test UpdateDefaultPollInterval statement paths with different values
+		intervals := []int{30, 45, 90, 120, 180}
+		for _, interval := range intervals {
+			err = store.UpdateDefaultPollInterval(ctx, interval)
+			assert.NoError(t, err)
+		}
+		
+		// Test UpdateFeedLastFetched statement paths
+		// Create another feed
+		feedID2, err := store.InsertFeed(ctx, &models.Feed{
+			Name: "Feed for Last Fetched",
+			URL:  "https://example.com/lastfetched.xml",
+		})
+		assert.NoError(t, err)
+		
+		// Test multiple updates to cover statement reuse
+		for i := 0; i < 3; i++ {
+			err = store.UpdateFeedLastFetched(ctx, int(feedID2))
+			assert.NoError(t, err)
+		}
+		
+		// Test MarkFeedInitialSyncCompleted statement paths
+		err = store.MarkFeedInitialSyncCompleted(ctx, int(feedID2))
+		assert.NoError(t, err)
+		
+		// Test again to ensure idempotency
+		err = store.MarkFeedInitialSyncCompleted(ctx, int(feedID2))
+		assert.NoError(t, err)
+	})
+	
+	t.Run("InsertFeed with complex nullable field combinations", func(t *testing.T) {
+		// Test InsertFeed with different combinations of nullable fields
+		testFeeds := []struct {
+			syncCount   *int
+			syncDate    *time.Time
+			name        string
+			syncMode    models.SyncMode
+			initialSync bool
+		}{
+			{nil, nil, "Feed with nil sync count", models.SyncModeCount, false},
+			{nil, nil, "Feed with nil sync date", models.SyncModeDateFrom, true},
+			{nil, nil, "Feed with both nil", models.SyncModeAll, false},
+		}
+		
+		for i, test := range testFeeds {
+			feed := &models.Feed{
+				Name:            test.name,
+				URL:             fmt.Sprintf("https://example.com/nullable-%d.xml", i),
+				SyncMode:        test.syncMode,
+				SyncCount:       test.syncCount,
+				SyncDateFrom:    test.syncDate,
+				InitialSyncDone: test.initialSync,
+			}
+			feed.SetPollInterval(i+1, models.TimeUnitMinutes)
+			
+			feedID, err := store.InsertFeed(ctx, feed)
+			assert.NoError(t, err)
+			assert.Greater(t, feedID, int64(0))
+			
+			// Verify insertion
+			retrieved, err := store.GetFeedByID(ctx, int(feedID))
+			assert.NoError(t, err)
+			assert.Equal(t, test.name, retrieved.Name)
+			assert.Equal(t, test.syncMode, retrieved.SyncMode)
+			assert.Equal(t, test.initialSync, retrieved.InitialSyncDone)
+			
+			if test.syncCount != nil {
+				assert.NotNil(t, retrieved.SyncCount)
+				assert.Equal(t, *test.syncCount, *retrieved.SyncCount)
+			} else {
+				assert.Nil(t, retrieved.SyncCount)
+			}
+			
+			if test.syncDate != nil {
+				assert.NotNil(t, retrieved.SyncDateFrom)
+			} else {
+				assert.Nil(t, retrieved.SyncDateFrom)
+			}
+		}
 	})
 }

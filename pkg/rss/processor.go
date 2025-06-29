@@ -26,20 +26,20 @@ type Article struct {
 
 // Processor handles fetching and parsing RSS feeds.
 type Processor struct {
-	feedParser *gofeed.Parser
+	FeedParser *gofeed.Parser
 }
 
 // NewProcessor creates a new RSS Processor.
 func NewProcessor() *Processor {
 	return &Processor{
-		feedParser: gofeed.NewParser(),
+		FeedParser: gofeed.NewParser(),
 	}
 }
 
 // FetchAndParse fetches an RSS feed from the given URL and parses it.
 func (p *Processor) FetchAndParse(feedURL string) ([]Article, error) {
 	logging.Debug("Fetching RSS feed", "feed_url", feedURL)
-	feed, err := p.feedParser.ParseURL(feedURL)
+	feed, err := p.FeedParser.ParseURL(feedURL)
 	if err != nil {
 		return nil, fmt.Errorf("feedParser.ParseURL failed for %s: %w", feedURL, err)
 	}
@@ -124,7 +124,7 @@ func (p *Processor) handleSyncModeNone(feedURL string) ([]Article, error) {
 // handleSyncModeAll handles the 'all' sync mode
 func (p *Processor) handleSyncModeAll(feedURL string, allArticles []Article) ([]Article, error) {
 	// Sort all articles oldest first for chronological processing
-	sortedArticles := p.sortArticlesByDate(allArticles)
+	sortedArticles := p.SortArticlesByDate(allArticles)
 	
 	logging.Debug("Sync mode 'all': returning all articles in chronological order",
 		"feed_url", feedURL,
@@ -144,7 +144,7 @@ func (p *Processor) handleSyncModeCount(feedURL string, allArticles []Article, s
 	}
 
 	// Sort articles by published date (newest first) to get the most recent N
-	sortedNewestFirst := p.sortArticlesByDateNewestFirst(allArticles)
+	sortedNewestFirst := p.SortArticlesByDateNewestFirst(allArticles)
 
 	// Get the most recent N articles
 	count := *syncCount
@@ -155,7 +155,7 @@ func (p *Processor) handleSyncModeCount(feedURL string, allArticles []Article, s
 	recentArticles := sortedNewestFirst[:count]
 	
 	// Now sort these N articles oldest first for processing
-	finalArticles := p.sortArticlesByDate(recentArticles)
+	finalArticles := p.SortArticlesByDate(recentArticles)
 	
 	logging.Debug("Sync mode 'count': returning most recent articles in chronological order",
 		"feed_url", feedURL,
@@ -177,12 +177,12 @@ func (p *Processor) handleSyncModeDateFrom(feedURL string, allArticles []Article
 	filteredArticles := p.filterArticlesByDate(allArticles, syncDateFrom)
 	
 	// Sort filtered articles oldest first for chronological processing
-	sortedArticles := p.sortArticlesByDate(filteredArticles)
+	sortedArticles := p.SortArticlesByDate(filteredArticles)
 	
 	logging.Debug("Sync mode 'date_from': returning articles after date in chronological order",
 		"feed_url", feedURL,
 		"filtered_count", len(sortedArticles),
-		"sync_date_from", p.formatDateOrNil(syncDateFrom),
+		"sync_date_from", p.FormatDateOrNil(syncDateFrom),
 		"total_articles", len(allArticles))
 
 	return sortedArticles, nil
@@ -197,8 +197,8 @@ func (p *Processor) handleUnknownSyncMode(feedURL string, syncMode models.SyncMo
 	return []Article{}, nil
 }
 
-// sortArticlesByDate sorts articles by published date (oldest first)
-func (p *Processor) sortArticlesByDate(articles []Article) []Article {
+// SortArticlesByDate sorts articles by published date (oldest first)
+func (p *Processor) SortArticlesByDate(articles []Article) []Article {
 	sortedArticles := make([]Article, len(articles))
 	copy(sortedArticles, articles)
 	sort.Slice(sortedArticles, func(firstIdx, secondIdx int) bool {
@@ -221,8 +221,8 @@ func (p *Processor) sortArticlesByDate(articles []Article) []Article {
 	return sortedArticles
 }
 
-// sortArticlesByDateNewestFirst sorts articles by published date (newest first)
-func (p *Processor) sortArticlesByDateNewestFirst(articles []Article) []Article {
+// SortArticlesByDateNewestFirst sorts articles by published date (newest first)
+func (p *Processor) SortArticlesByDateNewestFirst(articles []Article) []Article {
 	sortedArticles := make([]Article, len(articles))
 	copy(sortedArticles, articles)
 	sort.Slice(sortedArticles, func(firstIdx, secondIdx int) bool {
@@ -258,8 +258,8 @@ func (p *Processor) filterArticlesByDate(articles []Article, syncDateFrom *time.
 	return filteredArticles
 }
 
-// formatDateOrNil formats a date pointer or returns "nil" if nil
-func (p *Processor) formatDateOrNil(date *time.Time) string {
+// FormatDateOrNil formats a date pointer or returns "nil" if nil
+func (p *Processor) FormatDateOrNil(date *time.Time) string {
 	if date != nil {
 		return date.Format("2006-01-02")
 	}

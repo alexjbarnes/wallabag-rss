@@ -72,6 +72,7 @@ linters-settings:
       - ifElseChain
       - octalLiteral
       - whyNoLint
+      - unnamedResult
   
   gocognit:
     min-complexity: 15
@@ -332,8 +333,6 @@ linters-settings:
   inamedparam:
     skip-single-param: true
   
-  nonamedreturns:
-    report-error-in-defer: true
   
   nolintlint:
     allow-unused: false
@@ -423,7 +422,6 @@ linters:
     - nakedret
     - unparam
     - varnamelen
-    - nonamedreturns
     - inamedparam
     - exhaustive
     - asasalint
@@ -471,7 +469,6 @@ issues:
         - nestif
         - maintidx
         - forbidigo
-        - nonamedreturns
         - inamedparam
         - perfsprint
         - contextcheck
@@ -556,6 +553,17 @@ issues:
       path: _test\.go
       linters:
         - errcheck
+    
+    # Allow server package tests to use internal package (needed for testing internal methods)
+    - path: pkg/server/.*_test\.go
+      linters:
+        - testpackage
+    
+    # Allow higher complexity in wallabag API client package
+    - path: pkg/wallabag/client\.go
+      linters:
+        - cyclop
+    
   
   exclude-use-default: false
   max-issues-per-linter: 0

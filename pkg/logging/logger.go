@@ -57,7 +57,7 @@ func NewDevelopmentLogger() *SlogLogger {
 
 // NewLoggerWithLevel creates a logger with the specified level and format
 func NewLoggerWithLevel(level string, useJSON bool) *SlogLogger {
-	slogLevel := parseLevelString(level)
+	slogLevel := ParseLevelString(level)
 	
 	var handler slog.Handler
 	if useJSON {
@@ -71,11 +71,12 @@ func NewLoggerWithLevel(level string, useJSON bool) *SlogLogger {
 	}
 
 	logger := slog.New(handler)
+
 	return NewSlogLogger(logger)
 }
 
-// parseLevelString converts a string level to slog.Level
-func parseLevelString(level string) slog.Level {
+// ParseLevelString converts a string level to slog.Level
+func ParseLevelString(level string) slog.Level {
 	switch strings.ToUpper(strings.TrimSpace(level)) {
 	case "DEBUG":
 		return slog.LevelDebug

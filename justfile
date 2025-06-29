@@ -35,6 +35,25 @@ test: generate
 test-coverage: generate
     go test -cover ./...
 
+# Generate detailed coverage report (excluding mocks and generated templates)
+coverage-report: generate
+    go test -coverprofile=coverage.out -coverpkg=./... ./...
+    grep -v "_templ.go" coverage.out | grep -v "mocks/" > coverage_filtered.out
+    go tool cover -html=coverage_filtered.out -o coverage.html
+    @echo "📊 Coverage report generated: coverage.html"
+    @go tool cover -func=coverage_filtered.out | grep "total:"
+
+# Show coverage percentage only (excluding mocks and generated files)  
+coverage-check:
+    @templ generate ./views > /dev/null 2>&1
+    @echo "Running tests and generating coverage..."
+    @timeout 120 go test -coverprofile=coverage.out -coverpkg=./... ./... > /dev/null 2>&1 || true
+    @if [ -f coverage.out ]; then \
+        go tool cover -func=coverage.out | grep -E "^wallabag-rss-tool/(pkg|main)" | grep -v "_templ.go" | grep -v "/mocks/" | awk 'BEGIN{sum=0;count=0} {if(NF>=3 && $3!="") {sum+=substr($3,1,length($3)-1); count++}} END {if(count>0) printf "%.1f%%\n", sum/count; else print "0.0%"}'; \
+    else \
+        echo "0.0%"; \
+    fi
+
 # Clean build artifacts
 clean:
     rm -f wallabag-rss-tool

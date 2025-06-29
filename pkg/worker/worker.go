@@ -44,7 +44,7 @@ func (w *Worker) Start() {
 func (w *Worker) Stop() {
 	logging.Info("Worker stopping...")
 	close(w.stopChan)
-	// Note: We don't close priorityQueue to avoid panic if QueueFeedForImmediate is called during shutdown
+	// priorityQueue is left open to avoid panic if QueueFeedForImmediate is called during shutdown
 }
 
 func (w *Worker) run() {
@@ -121,6 +121,7 @@ func (w *Worker) QueueAllFeedsForImmediate(ctx context.Context) error {
 	}
 	
 	queuedCount := 0
+queueLoop:
 	for _, feed := range feeds {
 		select {
 		case w.priorityQueue <- feed.ID:
@@ -129,19 +130,20 @@ func (w *Worker) QueueAllFeedsForImmediate(ctx context.Context) error {
 			logging.Warn("Priority queue full, remaining feeds will sync on schedule",
 				"queued", queuedCount,
 				"total", len(feeds))
-			break
+
+			break queueLoop
 		}
 	}
 	
 	logging.Info("Queued feeds for immediate processing",
 		"queued_count", queuedCount,
 		"total_count", len(feeds))
-	
+
 	return nil
 }
 
 // GetQueueStats returns statistics about the priority queue
-func (w *Worker) GetQueueStats() (queueLength int, queueCapacity int) {
+func (w *Worker) GetQueueStats() (int, int) {
 	return len(w.priorityQueue), cap(w.priorityQueue)
 }
 
@@ -185,6 +187,7 @@ func (w *Worker) processSingleFeedByID(ctx context.Context, feedID int) error {
 		"feed_url", feed.URL)
 
 	w.processSingleFeed(ctx, feed)
+
 	return nil
 }
 

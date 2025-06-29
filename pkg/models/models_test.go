@@ -8,223 +8,347 @@ import (
 	"wallabag-rss-tool/pkg/models"
 )
 
-func TestFeedStruct(t *testing.T) {
-	now := time.Now()
-
+func TestSyncMode(t *testing.T) {
 	tests := []struct {
-		name string
-		feed models.Feed
+		name     string
+		mode     models.SyncMode
+		expected string
+	}{
+		{"models.SyncModeNone", models.SyncModeNone, "none"},
+		{"models.SyncModeAll", models.SyncModeAll, "all"},
+		{"models.SyncModeCount", models.SyncModeCount, "count"},
+		{"models.SyncModeDateFrom", models.SyncModeDateFrom, "date_from"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, models.SyncMode(tt.expected), tt.mode)
+			assert.Equal(t, tt.expected, string(tt.mode))
+		})
+	}
+}
+
+func TestTimeUnit(t *testing.T) {
+	tests := []struct {
+		name     string
+		unit     models.TimeUnit
+		expected string
+	}{
+		{"models.TimeUnitMinutes", models.TimeUnitMinutes, "minutes"},
+		{"models.TimeUnitHours", models.TimeUnitHours, "hours"},
+		{"models.TimeUnitDays", models.TimeUnitDays, "days"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, models.TimeUnit(tt.expected), tt.unit)
+			assert.Equal(t, tt.expected, string(tt.unit))
+		})
+	}
+}
+
+func TestFeed_GetPollIntervalMinutes(t *testing.T) {
+	tests := []struct {
+		name     string
+		feed     models.Feed
+		expected int
 	}{
 		{
-			name: "Complete feed",
+			name: "poll interval in minutes",
 			feed: models.Feed{
-				ID:                  1,
-				URL:                 "https://example.com/feed.rss",
-				Name:                "Example Feed",
-				LastFetched:         &now,
-				PollIntervalMinutes: 60,
+				PollInterval:     30,
+				PollIntervalUnit: models.TimeUnitMinutes,
 			},
+			expected: 30,
 		},
 		{
-			name: "Feed without last fetched",
+			name: "poll interval in hours",
 			feed: models.Feed{
-				ID:                  2,
-				URL:                 "https://test.com/rss",
-				Name:                "Test Feed",
-				LastFetched:         nil,
-				PollIntervalMinutes: 30,
+				PollInterval:     2,
+				PollIntervalUnit: models.TimeUnitHours,
 			},
+			expected: 120, // 2 hours = 120 minutes
 		},
 		{
-			name: "Zero values",
-			feed: models.Feed{},
+			name: "poll interval in days",
+			feed: models.Feed{
+				PollInterval:     1,
+				PollIntervalUnit: models.TimeUnitDays,
+			},
+			expected: 1440, // 1 day = 1440 minutes
+		},
+		{
+			name: "poll interval with zero value",
+			feed: models.Feed{
+				PollInterval:     0,
+				PollIntervalUnit: models.TimeUnitHours,
+			},
+			expected: 0,
+		},
+		{
+			name: "poll interval with negative value",
+			feed: models.Feed{
+				PollInterval:     -5,
+				PollIntervalUnit: models.TimeUnitHours,
+			},
+			expected: 0,
+		},
+		{
+			name: "poll interval with unknown unit",
+			feed: models.Feed{
+				PollInterval:     60,
+				PollIntervalUnit: models.TimeUnit("unknown"),
+			},
+			expected: 60, // fallback to treating as minutes
+		},
+		{
+			name: "poll interval with empty unit",
+			feed: models.Feed{
+				PollInterval:     45,
+				PollIntervalUnit: models.TimeUnit(""),
+			},
+			expected: 45, // fallback to treating as minutes
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Test that struct can be created and accessed
-			feed := tt.feed
+			assert.Equal(t, tt.expected, tt.feed.GetPollIntervalMinutes())
+		})
+	}
+}
 
-			assert.Equal(t, tt.feed.ID, feed.ID)
-			assert.Equal(t, tt.feed.URL, feed.URL)
-			assert.Equal(t, tt.feed.Name, feed.Name)
-			assert.Equal(t, tt.feed.LastFetched, feed.LastFetched)
-			assert.Equal(t, tt.feed.PollIntervalMinutes, feed.PollIntervalMinutes)
+func TestFeed_SetPollInterval(t *testing.T) {
+	tests := []struct {
+		expectedUnit         models.TimeUnit
+		unit                 models.TimeUnit
+		name                 string
+		expectedInterval     int
+		expectedMinutes      int
+		interval             int
+	}{
+		{
+			name:             "set poll interval in minutes",
+			interval:         30,
+			unit:             models.TimeUnitMinutes,
+			expectedInterval: 30,
+			expectedUnit:     models.TimeUnitMinutes,
+			expectedMinutes:  30,
+		},
+		{
+			name:             "set poll interval in hours",
+			interval:         3,
+			unit:             models.TimeUnitHours,
+			expectedInterval: 3,
+			expectedUnit:     models.TimeUnitHours,
+			expectedMinutes:  180, // 3 hours = 180 minutes
+		},
+		{
+			name:             "set poll interval in days",
+			interval:         2,
+			unit:             models.TimeUnitDays,
+			expectedInterval: 2,
+			expectedUnit:     models.TimeUnitDays,
+			expectedMinutes:  2880, // 2 days = 2880 minutes
+		},
+		{
+			name:             "set poll interval with zero value",
+			interval:         0,
+			unit:             models.TimeUnitHours,
+			expectedInterval: 0,
+			expectedUnit:     models.TimeUnitHours,
+			expectedMinutes:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			feed := &models.Feed{}
+			feed.SetPollInterval(tt.interval, tt.unit)
+			
+			assert.Equal(t, tt.expectedInterval, feed.PollInterval)
+			assert.Equal(t, tt.expectedUnit, feed.PollIntervalUnit)
+			assert.Equal(t, tt.expectedMinutes, feed.PollIntervalMinutes)
+		})
+	}
+
+	t.Run("set poll interval overwrites existing values", func(t *testing.T) {
+		feed := &models.Feed{
+			PollInterval:        60,
+			PollIntervalUnit:    models.TimeUnitMinutes,
+			PollIntervalMinutes: 60,
+		}
+		
+		feed.SetPollInterval(5, models.TimeUnitHours)
+		
+		assert.Equal(t, 5, feed.PollInterval)
+		assert.Equal(t, models.TimeUnitHours, feed.PollIntervalUnit)
+		assert.Equal(t, 300, feed.PollIntervalMinutes) // 5 hours = 300 minutes
+	})
+}
+
+func TestFeedStruct(t *testing.T) {
+	now := time.Now()
+	syncCount := 10
+
+	tests := []struct {
+		checkFunc func(t *testing.T, feed models.Feed)
+		name      string
+		feed      models.Feed
+	}{
+		{
+			name: "Complete feed with all fields",
+			feed: models.Feed{
+				ID:                  1,
+				URL:                 "https://example.com/feed.rss",
+				Name:                "Example models.Feed",
+				LastFetched:         &now,
+				PollInterval:        2,
+				PollIntervalUnit:    models.TimeUnitHours,
+				PollIntervalMinutes: 120,
+				SyncMode:            models.SyncModeCount,
+				SyncCount:           &syncCount,
+				SyncDateFrom:        &now,
+				InitialSyncDone:     true,
+			},
+			checkFunc: func(t *testing.T, feed models.Feed) {
+				t.Helper()
+				assert.Equal(t, 1, feed.ID)
+				assert.Equal(t, "https://example.com/feed.rss", feed.URL)
+				assert.Equal(t, "Example models.Feed", feed.Name)
+				assert.Equal(t, &now, feed.LastFetched)
+				assert.Equal(t, 2, feed.PollInterval)
+				assert.Equal(t, models.TimeUnitHours, feed.PollIntervalUnit)
+				assert.Equal(t, 120, feed.PollIntervalMinutes)
+				assert.Equal(t, models.SyncModeCount, feed.SyncMode)
+				assert.Equal(t, &syncCount, feed.SyncCount)
+				assert.Equal(t, &now, feed.SyncDateFrom)
+				assert.True(t, feed.InitialSyncDone)
+			},
+		},
+		{
+			name: "models.Feed with nil pointers",
+			feed: models.Feed{
+				ID:               2,
+				URL:              "https://test.com/rss",
+				Name:             "Test models.Feed",
+				LastFetched:      nil,
+				SyncCount:        nil,
+				SyncDateFrom:     nil,
+				InitialSyncDone:  false,
+			},
+			checkFunc: func(t *testing.T, feed models.Feed) {
+				t.Helper()
+				assert.Equal(t, 2, feed.ID)
+				assert.Equal(t, "https://test.com/rss", feed.URL)
+				assert.Equal(t, "Test models.Feed", feed.Name)
+				assert.Nil(t, feed.LastFetched)
+				assert.Nil(t, feed.SyncCount)
+				assert.Nil(t, feed.SyncDateFrom)
+				assert.False(t, feed.InitialSyncDone)
+			},
+		},
+		{
+			name: "Zero values feed",
+			feed: models.Feed{},
+			checkFunc: func(t *testing.T, feed models.Feed) {
+				t.Helper()
+				assert.Equal(t, 0, feed.ID)
+				assert.Equal(t, "", feed.URL)
+				assert.Equal(t, "", feed.Name)
+				assert.Nil(t, feed.LastFetched)
+				assert.Equal(t, 0, feed.PollInterval)
+				assert.Equal(t, models.TimeUnit(""), feed.PollIntervalUnit)
+				assert.Equal(t, 0, feed.PollIntervalMinutes)
+				assert.Equal(t, models.SyncMode(""), feed.SyncMode)
+				assert.Nil(t, feed.SyncCount)
+				assert.Nil(t, feed.SyncDateFrom)
+				assert.False(t, feed.InitialSyncDone)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.checkFunc(t, tt.feed)
 		})
 	}
 }
 
 func TestArticleStruct(t *testing.T) {
 	now := time.Now()
-	published := time.Now().Add(-time.Hour)
-	wallabagID := 123
+	publishedAt := now.Add(-time.Hour)
+	createdAt := now.Add(-30 * time.Minute)
+	wallabagEntryID := 123
 
 	tests := []struct {
-		name    string
-		article models.Article
+		checkFunc func(t *testing.T, article models.Article)
+		name      string
+		article   models.Article
 	}{
 		{
-			name: "Complete article",
+			name: "Complete article with all fields",
 			article: models.Article{
 				ID:              1,
-				FeedID:          10,
+				FeedID:          2,
 				Title:           "Test Article",
-				URL:             "https://example.com/article1",
-				WallabagEntryID: &wallabagID,
-				PublishedAt:     &published,
-				CreatedAt:       now,
+				URL:             "https://example.com/article",
+				PublishedAt:     &publishedAt,
+				WallabagEntryID: &wallabagEntryID,
+				CreatedAt:       createdAt,
+			},
+			checkFunc: func(t *testing.T, article models.Article) {
+				t.Helper()
+				assert.Equal(t, 1, article.ID)
+				assert.Equal(t, 2, article.FeedID)
+				assert.Equal(t, "Test Article", article.Title)
+				assert.Equal(t, "https://example.com/article", article.URL)
+				assert.Equal(t, &publishedAt, article.PublishedAt)
+				assert.Equal(t, &wallabagEntryID, article.WallabagEntryID)
+				assert.Equal(t, createdAt, article.CreatedAt)
 			},
 		},
 		{
-			name: "Article without wallabag ID",
-			article: models.Article{
-				ID:              2,
-				FeedID:          20,
-				Title:           "Another Article",
-				URL:             "https://test.com/article2",
-				WallabagEntryID: nil,
-				PublishedAt:     &published,
-				CreatedAt:       now,
-			},
-		},
-		{
-			name: "Article without published date",
+			name: "models.Article with nil pointers",
 			article: models.Article{
 				ID:              3,
-				FeedID:          30,
-				Title:           "Recent Article",
-				URL:             "https://news.com/article3",
-				WallabagEntryID: &wallabagID,
+				FeedID:          4,
+				Title:           "Another models.Article",
+				URL:             "https://test.com/article",
 				PublishedAt:     nil,
+				WallabagEntryID: nil,
 				CreatedAt:       now,
+			},
+			checkFunc: func(t *testing.T, article models.Article) {
+				t.Helper()
+				assert.Equal(t, 3, article.ID)
+				assert.Equal(t, 4, article.FeedID)
+				assert.Equal(t, "Another models.Article", article.Title)
+				assert.Equal(t, "https://test.com/article", article.URL)
+				assert.Nil(t, article.PublishedAt)
+				assert.Nil(t, article.WallabagEntryID)
+				assert.Equal(t, now, article.CreatedAt)
 			},
 		},
 		{
-			name:    "Zero values",
+			name: "Zero values article",
 			article: models.Article{},
+			checkFunc: func(t *testing.T, article models.Article) {
+				t.Helper()
+				assert.Equal(t, 0, article.ID)
+				assert.Equal(t, 0, article.FeedID)
+				assert.Equal(t, "", article.Title)
+				assert.Equal(t, "", article.URL)
+				assert.Nil(t, article.PublishedAt)
+				assert.Nil(t, article.WallabagEntryID)
+				assert.True(t, article.CreatedAt.IsZero())
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Test that struct can be created and accessed
-			article := tt.article
-
-			assert.Equal(t, tt.article.ID, article.ID)
-			assert.Equal(t, tt.article.FeedID, article.FeedID)
-			assert.Equal(t, tt.article.Title, article.Title)
-			assert.Equal(t, tt.article.URL, article.URL)
-			assert.Equal(t, tt.article.WallabagEntryID, article.WallabagEntryID)
-			assert.Equal(t, tt.article.PublishedAt, article.PublishedAt)
-			assert.Equal(t, tt.article.CreatedAt, article.CreatedAt)
+			tt.checkFunc(t, tt.article)
 		})
 	}
-}
-
-func TestFeedPointerFields(t *testing.T) {
-	t.Run("LastFetched pointer behavior", func(t *testing.T) {
-		now := time.Now()
-
-		// Test nil pointer
-		feed1 := models.Feed{LastFetched: nil}
-		assert.Nil(t, feed1.LastFetched)
-
-		// Test non-nil pointer
-		feed2 := models.Feed{LastFetched: &now}
-		assert.NotNil(t, feed2.LastFetched)
-		assert.Equal(t, now, *feed2.LastFetched)
-
-		// Test pointer assignment
-		feed3 := models.Feed{}
-		feed3.LastFetched = &now
-		assert.NotNil(t, feed3.LastFetched)
-		assert.Equal(t, now, *feed3.LastFetched)
-	})
-}
-
-func TestArticlePointerFields(t *testing.T) {
-	t.Run("WallabagEntryID pointer behavior", func(t *testing.T) {
-		wallabagID := 456
-
-		// Test nil pointer
-		article1 := models.Article{WallabagEntryID: nil}
-		assert.Nil(t, article1.WallabagEntryID)
-
-		// Test non-nil pointer
-		article2 := models.Article{WallabagEntryID: &wallabagID}
-		assert.NotNil(t, article2.WallabagEntryID)
-		assert.Equal(t, wallabagID, *article2.WallabagEntryID)
-	})
-
-	t.Run("PublishedAt pointer behavior", func(t *testing.T) {
-		published := time.Now().Add(-2 * time.Hour)
-
-		// Test nil pointer
-		article1 := models.Article{PublishedAt: nil}
-		assert.Nil(t, article1.PublishedAt)
-
-		// Test non-nil pointer
-		article2 := models.Article{PublishedAt: &published}
-		assert.NotNil(t, article2.PublishedAt)
-		assert.Equal(t, published, *article2.PublishedAt)
-	})
-}
-
-func TestStructCopy(t *testing.T) {
-	t.Run("Feed copy", func(t *testing.T) {
-		now := time.Now()
-		original := models.Feed{
-			ID:                  1,
-			URL:                 "https://example.com/feed",
-			Name:                "Original Feed",
-			LastFetched:         &now,
-			PollIntervalMinutes: 60,
-		}
-
-		copied := original
-		assert.Equal(t, original.ID, copied.ID)
-		assert.Equal(t, original.URL, copied.URL)
-		assert.Equal(t, original.Name, copied.Name)
-		assert.Equal(t, original.PollIntervalMinutes, copied.PollIntervalMinutes)
-
-		// Pointer should point to same time value
-		assert.Equal(t, original.LastFetched, copied.LastFetched)
-		if original.LastFetched != nil && copied.LastFetched != nil {
-			assert.Equal(t, *original.LastFetched, *copied.LastFetched)
-		}
-	})
-
-	t.Run("Article copy", func(t *testing.T) {
-		now := time.Now()
-		published := time.Now().Add(-time.Hour)
-		wallabagID := 789
-
-		original := models.Article{
-			ID:              1,
-			FeedID:          10,
-			Title:           "Original Article",
-			URL:             "https://example.com/article",
-			WallabagEntryID: &wallabagID,
-			PublishedAt:     &published,
-			CreatedAt:       now,
-		}
-
-		copied := original
-		assert.Equal(t, original.ID, copied.ID)
-		assert.Equal(t, original.FeedID, copied.FeedID)
-		assert.Equal(t, original.Title, copied.Title)
-		assert.Equal(t, original.URL, copied.URL)
-		assert.Equal(t, original.CreatedAt, copied.CreatedAt)
-
-		// Pointers should point to same values
-		assert.Equal(t, original.WallabagEntryID, copied.WallabagEntryID)
-		assert.Equal(t, original.PublishedAt, copied.PublishedAt)
-		if original.WallabagEntryID != nil && copied.WallabagEntryID != nil {
-			assert.Equal(t, *original.WallabagEntryID, *copied.WallabagEntryID)
-		}
-		if original.PublishedAt != nil && copied.PublishedAt != nil {
-			assert.Equal(t, *original.PublishedAt, *copied.PublishedAt)
-		}
-	})
 }

@@ -15,7 +15,7 @@ import (
 func TestNewProcessor(t *testing.T) {
 	processor := rss.NewProcessor()
 	assert.NotNil(t, processor)
-	// Cannot access unexported field feedParser from external test
+	assert.NotNil(t, processor.FeedParser)
 }
 
 func TestArticleStruct(t *testing.T) {
@@ -674,5 +674,204 @@ func BenchmarkProcessor_FetchAndParse(b *testing.B) {
 		if len(articles) != 100 {
 			b.Fatalf("Expected 100 articles, got %d", len(articles))
 		}
+	}
+}
+
+func TestProcessor_sortArticlesByDate(t *testing.T) {
+	processor := rss.NewProcessor()
+	
+	// Create test dates
+	date1 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	date2 := time.Date(2024, 1, 2, 10, 0, 0, 0, time.UTC)
+	date3 := time.Date(2024, 1, 3, 10, 0, 0, 0, time.UTC)
+	
+	tests := []struct {
+		name     string
+		articles []rss.Article
+		expected []rss.Article
+	}{
+		{
+			name: "Sort articles by date (oldest first)",
+			articles: []rss.Article{
+				{Title: "Latest", URL: "url3", PublishedAt: &date3},
+				{Title: "Oldest", URL: "url1", PublishedAt: &date1},
+				{Title: "Middle", URL: "url2", PublishedAt: &date2},
+			},
+			expected: []rss.Article{
+				{Title: "Oldest", URL: "url1", PublishedAt: &date1},
+				{Title: "Middle", URL: "url2", PublishedAt: &date2},
+				{Title: "Latest", URL: "url3", PublishedAt: &date3},
+			},
+		},
+		{
+			name: "Articles with nil dates go to end",
+			articles: []rss.Article{
+				{Title: "With Date", URL: "url1", PublishedAt: &date1},
+				{Title: "No Date", URL: "url2", PublishedAt: nil},
+				{Title: "Another Date", URL: "url3", PublishedAt: &date2},
+			},
+			expected: []rss.Article{
+				{Title: "With Date", URL: "url1", PublishedAt: &date1},
+				{Title: "Another Date", URL: "url3", PublishedAt: &date2},
+				{Title: "No Date", URL: "url2", PublishedAt: nil},
+			},
+		},
+		{
+			name: "All articles with nil dates",
+			articles: []rss.Article{
+				{Title: "No Date 1", URL: "url1", PublishedAt: nil},
+				{Title: "No Date 2", URL: "url2", PublishedAt: nil},
+			},
+			expected: []rss.Article{
+				{Title: "No Date 1", URL: "url1", PublishedAt: nil},
+				{Title: "No Date 2", URL: "url2", PublishedAt: nil},
+			},
+		},
+		{
+			name:     "Empty articles slice",
+			articles: []rss.Article{},
+			expected: []rss.Article{},
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := processor.SortArticlesByDate(tt.articles)
+			assert.Equal(t, len(tt.expected), len(result))
+			for i, expected := range tt.expected {
+				assert.Equal(t, expected.Title, result[i].Title)
+				assert.Equal(t, expected.URL, result[i].URL)
+				if expected.PublishedAt == nil {
+					assert.Nil(t, result[i].PublishedAt)
+				} else {
+					assert.NotNil(t, result[i].PublishedAt)
+					assert.True(t, expected.PublishedAt.Equal(*result[i].PublishedAt))
+				}
+			}
+		})
+	}
+}
+
+func TestProcessor_sortArticlesByDateNewestFirst(t *testing.T) {
+	processor := rss.NewProcessor()
+	
+	// Create test dates
+	date1 := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
+	date2 := time.Date(2024, 1, 2, 10, 0, 0, 0, time.UTC)
+	date3 := time.Date(2024, 1, 3, 10, 0, 0, 0, time.UTC)
+	
+	tests := []struct {
+		name     string
+		articles []rss.Article
+		expected []rss.Article
+	}{
+		{
+			name: "Sort articles by date (newest first)",
+			articles: []rss.Article{
+				{Title: "Oldest", URL: "url1", PublishedAt: &date1},
+				{Title: "Latest", URL: "url3", PublishedAt: &date3},
+				{Title: "Middle", URL: "url2", PublishedAt: &date2},
+			},
+			expected: []rss.Article{
+				{Title: "Latest", URL: "url3", PublishedAt: &date3},
+				{Title: "Middle", URL: "url2", PublishedAt: &date2},
+				{Title: "Oldest", URL: "url1", PublishedAt: &date1},
+			},
+		},
+		{
+			name: "Articles with nil dates go to end",
+			articles: []rss.Article{
+				{Title: "No Date", URL: "url2", PublishedAt: nil},
+				{Title: "With Date", URL: "url1", PublishedAt: &date2},
+				{Title: "Another Date", URL: "url3", PublishedAt: &date1},
+			},
+			expected: []rss.Article{
+				{Title: "With Date", URL: "url1", PublishedAt: &date2},
+				{Title: "Another Date", URL: "url3", PublishedAt: &date1},
+				{Title: "No Date", URL: "url2", PublishedAt: nil},
+			},
+		},
+		{
+			name: "Mix of nil and valid dates in different order",
+			articles: []rss.Article{
+				{Title: "No Date 1", URL: "url1", PublishedAt: nil},
+				{Title: "With Date", URL: "url2", PublishedAt: &date1},
+				{Title: "No Date 2", URL: "url3", PublishedAt: nil},
+			},
+			expected: []rss.Article{
+				{Title: "With Date", URL: "url2", PublishedAt: &date1},
+				{Title: "No Date 1", URL: "url1", PublishedAt: nil},
+				{Title: "No Date 2", URL: "url3", PublishedAt: nil},
+			},
+		},
+		{
+			name: "All articles with nil dates",
+			articles: []rss.Article{
+				{Title: "No Date 1", URL: "url1", PublishedAt: nil},
+				{Title: "No Date 2", URL: "url2", PublishedAt: nil},
+			},
+			expected: []rss.Article{
+				{Title: "No Date 1", URL: "url1", PublishedAt: nil},
+				{Title: "No Date 2", URL: "url2", PublishedAt: nil},
+			},
+		},
+		{
+			name:     "Empty articles slice",
+			articles: []rss.Article{},
+			expected: []rss.Article{},
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := processor.SortArticlesByDateNewestFirst(tt.articles)
+			assert.Equal(t, len(tt.expected), len(result))
+			for i, expected := range tt.expected {
+				assert.Equal(t, expected.Title, result[i].Title)
+				assert.Equal(t, expected.URL, result[i].URL)
+				if expected.PublishedAt == nil {
+					assert.Nil(t, result[i].PublishedAt)
+				} else {
+					assert.NotNil(t, result[i].PublishedAt)
+					assert.True(t, expected.PublishedAt.Equal(*result[i].PublishedAt))
+				}
+			}
+		})
+	}
+}
+
+func TestProcessor_formatDateOrNil(t *testing.T) {
+	processor := rss.NewProcessor()
+	
+	tests := []struct {
+		name     string
+		date     *time.Time
+		expected string
+	}{
+		{
+			name:     "Format valid date",
+			date:     &time.Time{},
+			expected: "0001-01-01",
+		},
+		{
+			name: "Format specific date",
+			date: func() *time.Time {
+				d := time.Date(2024, 3, 15, 14, 30, 0, 0, time.UTC)
+				return &d
+			}(),
+			expected: "2024-03-15",
+		},
+		{
+			name:     "Nil date returns 'nil'",
+			date:     nil,
+			expected: "nil",
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := processor.FormatDateOrNil(tt.date)
+			assert.Equal(t, tt.expected, result)
+		})
 	}
 }

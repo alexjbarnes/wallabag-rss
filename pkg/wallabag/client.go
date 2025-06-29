@@ -1,6 +1,4 @@
 // Package wallabag provides a client for interacting with the Wallabag API for adding articles.
-//
-//nolint:cyclop // Package complexity is acceptable for API client functionality
 package wallabag
 
 import (

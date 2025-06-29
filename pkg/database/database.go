@@ -23,7 +23,7 @@ func InitDB() (*sql.DB, error) {
 // InitDBWithPath initializes the SQLite database with a custom path and applies migrations.
 func InitDBWithPath(dbPath string) (*sql.DB, error) {
 	// Validate and sanitize database path
-	if err := validateDatabasePath(dbPath); err != nil {
+	if err := ValidateDatabasePath(dbPath); err != nil {
 		return nil, fmt.Errorf("invalid database path: %w", err)
 	}
 
@@ -44,7 +44,7 @@ func InitDBWithPath(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("sql.Open failed for database: %w", err)
 	}
 
-	if err = applySchema(db); err != nil {
+	if err = ApplySchema(db); err != nil {
 		return nil, fmt.Errorf("applySchema failed: %w", err)
 	}
 
@@ -53,8 +53,8 @@ func InitDBWithPath(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-// applySchema reads the schema.sql file and executes its contents.
-func applySchema(db *sql.DB) error {
+// ApplySchema reads the schema.sql file and executes its contents.
+func ApplySchema(db *sql.DB) error {
 	schema, err := os.ReadFile(schemaPath)
 	if err != nil {
 		return fmt.Errorf("os.ReadFile failed for schema file %s: %w", schemaPath, err)
@@ -79,8 +79,8 @@ func CloseDB(db *sql.DB) {
 	}
 }
 
-// validateDatabasePath validates and sanitizes the database file path
-func validateDatabasePath(dbPath string) error {
+// ValidateDatabasePath validates and sanitizes the database file path
+func ValidateDatabasePath(dbPath string) error {
 	if dbPath == "" {
 		return errors.New("database path cannot be empty")
 	}

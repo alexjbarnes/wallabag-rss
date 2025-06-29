@@ -17,6 +17,8 @@ import (
 	"wallabag-rss-tool/views"
 )
 
+const localhostIP = "localhost"
+
 // Server holds the HTTP server and its dependencies.
 type Server struct {
 	store          database.Storer
@@ -35,11 +37,11 @@ func NewServer(store database.Storer, wallabagClient wallabag.Clienter, worker *
 	}
 }
 
-// getLocalIP returns the local IP address without external connections
-func getLocalIP() string {
+// GetLocalIP returns the local IP address without external connections
+func GetLocalIP() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
-		return "localhost"
+		return localhostIP
 	}
 
 	for _, addr := range addrs {
@@ -50,7 +52,7 @@ func getLocalIP() string {
 		}
 	}
 
-	return "localhost"
+	return localhostIP
 }
 
 // Start configures and starts the HTTP server.
@@ -59,14 +61,14 @@ func (s *Server) Start(port string) error {
 	mux := http.NewServeMux()
 	
 	
-	mux.HandleFunc("/", s.addSecurityHeaders(s.handleIndex))
-	mux.HandleFunc("/feeds", s.addSecurityHeaders(s.csrfProtection(s.handleFeeds)))
-	mux.HandleFunc("/feeds/edit/", s.addSecurityHeaders(s.handleEditFeed))
-	mux.HandleFunc("/feeds/row/", s.addSecurityHeaders(s.handleFeedRow))
-	mux.HandleFunc("/articles", s.addSecurityHeaders(s.handleArticles))
-	mux.HandleFunc("/settings", s.addSecurityHeaders(s.handleSettings))
-	mux.HandleFunc("/sync", s.addSecurityHeaders(s.csrfProtection(s.handleSync)))
-	mux.HandleFunc("/settings/poll-interval", s.addSecurityHeaders(s.csrfProtection(s.handleUpdateDefaultPollInterval)))
+	mux.HandleFunc("/", s.AddSecurityHeaders(s.HandleIndex))
+	mux.HandleFunc("/feeds", s.AddSecurityHeaders(s.csrfProtection(s.handleFeeds)))
+	mux.HandleFunc("/feeds/edit/", s.AddSecurityHeaders(s.handleEditFeed))
+	mux.HandleFunc("/feeds/row/", s.AddSecurityHeaders(s.handleFeedRow))
+	mux.HandleFunc("/articles", s.AddSecurityHeaders(s.handleArticles))
+	mux.HandleFunc("/settings", s.AddSecurityHeaders(s.handleSettings))
+	mux.HandleFunc("/sync", s.AddSecurityHeaders(s.csrfProtection(s.handleSync)))
+	mux.HandleFunc("/settings/poll-interval", s.AddSecurityHeaders(s.csrfProtection(s.handleUpdateDefaultPollInterval)))
 
 	server := &http.Server{
 		Addr:           ":" + port,
@@ -77,14 +79,14 @@ func (s *Server) Start(port string) error {
 		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 
-	ip := getLocalIP()
+	ip := GetLocalIP()
 	logging.Info("Server starting", "ip", ip, "port", port, "url", fmt.Sprintf("http://%s:%s", ip, port))
 
 	return server.ListenAndServe()
 }
 
-// addSecurityHeaders adds security headers to HTTP responses
-func (s *Server) addSecurityHeaders(next http.HandlerFunc) http.HandlerFunc {
+// AddSecurityHeaders adds security headers to HTTP responses
+func (s *Server) AddSecurityHeaders(next http.HandlerFunc) http.HandlerFunc {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		// Security headers
 		writer.Header().Set("X-Content-Type-Options", "nosniff")
@@ -98,7 +100,7 @@ func (s *Server) addSecurityHeaders(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
-func (s *Server) handleIndex(writer http.ResponseWriter, request *http.Request) {
+func (s *Server) HandleIndex(writer http.ResponseWriter, request *http.Request) {
 	data := views.PageData{Title: "Wallabag RSS Tool", CSRFToken: s.getCSRFToken()}
 	if err := views.Index(data).Render(request.Context(), writer); err != nil {
 		http.Error(writer, "Failed to render template", http.StatusInternalServerError)
@@ -177,7 +179,7 @@ func (s *Server) handleFeedsPost(writer http.ResponseWriter, request *http.Reque
 
 // handleFeedsPut handles PUT requests for updating feeds
 func (s *Server) handleFeedsPut(writer http.ResponseWriter, request *http.Request) {
-	id, err := s.extractFeedIDFromPath(request.URL.Path)
+	id, err := s.ExtractFeedIDFromPath(request.URL.Path)
 	if err != nil {
 		http.Error(writer, "Invalid feed ID", http.StatusBadRequest)
 
@@ -223,8 +225,8 @@ func (s *Server) handleFeedsPut(writer http.ResponseWriter, request *http.Reques
 	// Queue the updated feed for immediate re-sync if URL or sync settings changed
 	syncSettingsChanged := existingFeed.URL != feed.URL || 
 		existingFeed.SyncMode != feed.SyncMode || 
-		!equalIntPointers(existingFeed.SyncCount, feed.SyncCount) ||
-		!equalTimePointers(existingFeed.SyncDateFrom, feed.SyncDateFrom)
+		!EqualIntPointers(existingFeed.SyncCount, feed.SyncCount) ||
+		!EqualTimePointers(existingFeed.SyncDateFrom, feed.SyncDateFrom)
 		
 	if syncSettingsChanged {
 		s.worker.QueueFeedForImmediate(feed.ID)
@@ -236,7 +238,7 @@ func (s *Server) handleFeedsPut(writer http.ResponseWriter, request *http.Reques
 
 // handleFeedsDelete handles DELETE requests for removing feeds
 func (s *Server) handleFeedsDelete(writer http.ResponseWriter, request *http.Request) {
-	id, err := s.extractFeedIDFromPath(request.URL.Path)
+	id, err := s.ExtractFeedIDFromPath(request.URL.Path)
 	if err != nil {
 		http.Error(writer, "Invalid feed ID", http.StatusBadRequest)
 
@@ -272,8 +274,8 @@ func (s *Server) getDefaultPollIntervalWithFallback(ctx context.Context) int {
 	return defaultPollInterval
 }
 
-// extractFeedIDFromPath extracts feed ID from URL path
-func (s *Server) extractFeedIDFromPath(path string) (int, error) {
+// ExtractFeedIDFromPath extracts feed ID from URL path
+func (s *Server) ExtractFeedIDFromPath(path string) (int, error) {
 	idStr := path[len("/feeds/"):]
 
 	return strconv.Atoi(idStr)
@@ -281,17 +283,17 @@ func (s *Server) extractFeedIDFromPath(path string) (int, error) {
 
 // parseFeedFromForm parses form data into a Feed struct
 func (s *Server) parseFeedFromForm(request *http.Request) models.Feed {
-	formValues := s.extractFormValues(request)
-	s.logFormValues(&formValues)
+	formValues := s.ExtractFormValues(request)
+	s.LogFormValues(&formValues)
 
-	pollInterval, pollIntervalUnit := s.parsePollInterval(formValues.pollIntervalStr, formValues.pollIntervalUnitStr)
-	syncMode := s.parseSyncMode(formValues.syncModeStr)
-	syncCount := s.parseSyncCount(formValues.syncCountStr, syncMode)
-	syncDateFrom := s.parseSyncDateFrom(formValues.syncDateFromStr, syncMode)
+	pollInterval, pollIntervalUnit := s.ParsePollInterval(formValues.PollIntervalStr, formValues.PollIntervalUnitStr)
+	syncMode := s.ParseSyncMode(formValues.SyncModeStr)
+	syncCount := s.ParseSyncCount(formValues.SyncCountStr, syncMode)
+	syncDateFrom := s.ParseSyncDateFrom(formValues.SyncDateFromStr, syncMode)
 
 	feed := models.Feed{
-		Name:            formValues.name,
-		URL:             formValues.url,
+		Name:            formValues.Name,
+		URL:             formValues.URL,
 		SyncMode:        syncMode,
 		SyncCount:       syncCount,
 		SyncDateFrom:    syncDateFrom,
@@ -310,40 +312,40 @@ func (s *Server) parseFeedFromForm(request *http.Request) models.Feed {
 	return feed
 }
 
-type formValues struct {
-	name                string
-	url                 string
-	pollIntervalStr     string
-	pollIntervalUnitStr string
-	syncModeStr         string
-	syncCountStr        string
-	syncDateFromStr     string
+type FormValues struct {
+	Name                string
+	URL                 string
+	PollIntervalStr     string
+	PollIntervalUnitStr string
+	SyncModeStr         string
+	SyncCountStr        string
+	SyncDateFromStr     string
 }
 
-func (s *Server) extractFormValues(request *http.Request) formValues {
-	return formValues{
-		name:                request.FormValue("name"),
-		url:                 request.FormValue("url"),
-		pollIntervalStr:     request.FormValue("poll_interval"),
-		pollIntervalUnitStr: request.FormValue("poll_interval_unit"),
-		syncModeStr:         request.FormValue("sync_mode"),
-		syncCountStr:        request.FormValue("sync_count"),
-		syncDateFromStr:     request.FormValue("sync_date_from"),
+func (s *Server) ExtractFormValues(request *http.Request) FormValues {
+	return FormValues{
+		Name:                request.FormValue("name"),
+		URL:                 request.FormValue("url"),
+		PollIntervalStr:     request.FormValue("poll_interval"),
+		PollIntervalUnitStr: request.FormValue("poll_interval_unit"),
+		SyncModeStr:         request.FormValue("sync_mode"),
+		SyncCountStr:        request.FormValue("sync_count"),
+		SyncDateFromStr:     request.FormValue("sync_date_from"),
 	}
 }
 
-func (s *Server) logFormValues(fv *formValues) {
+func (s *Server) LogFormValues(fv *FormValues) {
 	logging.Info("DEBUG: Form values received",
-		"name", fv.name,
-		"url", fv.url,
-		"poll_interval", fv.pollIntervalStr,
-		"poll_interval_unit", fv.pollIntervalUnitStr,
-		"sync_mode", fv.syncModeStr,
-		"sync_count", fv.syncCountStr,
-		"sync_date_from", fv.syncDateFromStr)
+		"name", fv.Name,
+		"url", fv.URL,
+		"poll_interval", fv.PollIntervalStr,
+		"poll_interval_unit", fv.PollIntervalUnitStr,
+		"sync_mode", fv.SyncModeStr,
+		"sync_count", fv.SyncCountStr,
+		"sync_date_from", fv.SyncDateFromStr)
 }
 
-func (s *Server) parsePollInterval(pollIntervalStr, pollIntervalUnitStr string) (int, models.TimeUnit) {
+func (s *Server) ParsePollInterval(pollIntervalStr, pollIntervalUnitStr string) (int, models.TimeUnit) {
 	pollInterval, err := strconv.Atoi(pollIntervalStr)
 	if err != nil {
 		logging.Info("DEBUG: Poll interval conversion failed", "value", pollIntervalStr, "error", err)
@@ -358,7 +360,7 @@ func (s *Server) parsePollInterval(pollIntervalStr, pollIntervalUnitStr string) 
 	return pollInterval, pollIntervalUnit
 }
 
-func (s *Server) parseSyncMode(syncModeStr string) models.SyncMode {
+func (s *Server) ParseSyncMode(syncModeStr string) models.SyncMode {
 	if syncModeStr == "" {
 		syncModeStr = "none"
 	}
@@ -366,7 +368,7 @@ func (s *Server) parseSyncMode(syncModeStr string) models.SyncMode {
 	return models.SyncMode(syncModeStr)
 }
 
-func (s *Server) parseSyncCount(syncCountStr string, syncMode models.SyncMode) *int {
+func (s *Server) ParseSyncCount(syncCountStr string, syncMode models.SyncMode) *int {
 	if syncCountStr != "" && syncMode == models.SyncModeCount {
 		if count, err := strconv.Atoi(syncCountStr); err == nil && count > 0 {
 			logging.Info("DEBUG: Sync count parsed", "value", count)
@@ -378,7 +380,7 @@ func (s *Server) parseSyncCount(syncCountStr string, syncMode models.SyncMode) *
 	return nil
 }
 
-func (s *Server) parseSyncDateFrom(syncDateFromStr string, syncMode models.SyncMode) *time.Time {
+func (s *Server) ParseSyncDateFrom(syncDateFromStr string, syncMode models.SyncMode) *time.Time {
 	if syncDateFromStr != "" && syncMode == models.SyncModeDateFrom {
 		if date, err := time.Parse("2006-01-02", syncDateFromStr); err == nil {
 			logging.Info("DEBUG: Sync date parsed", "value", date)
@@ -522,6 +524,7 @@ func (s *Server) handleSync(writer http.ResponseWriter, request *http.Request) {
 	if err := s.worker.QueueAllFeedsForImmediate(request.Context()); err != nil {
 		logging.Error("Failed to queue feeds for sync", "error", err)
 		http.Error(writer, "Failed to initiate sync", http.StatusInternalServerError)
+
 		return
 	}
 
@@ -542,13 +545,13 @@ func (s *Server) handleUpdateDefaultPollInterval(writer http.ResponseWriter, req
 		return
 	}
 
-	interval, unit, err := s.parseDefaultPollIntervalForm(request)
+	interval, unit, err := s.ParseDefaultPollIntervalForm(request)
 	if err != nil {
 		http.Error(writer, "Invalid poll interval", http.StatusBadRequest)
 		return
 	}
 
-	intervalInMinutes := s.convertToMinutes(interval, unit)
+	intervalInMinutes := s.ConvertToMinutes(interval, unit)
 
 	if err := s.store.UpdateDefaultPollInterval(request.Context(), intervalInMinutes); err != nil {
 		logging.Error("Failed to update default poll interval",
@@ -562,13 +565,13 @@ func (s *Server) handleUpdateDefaultPollInterval(writer http.ResponseWriter, req
 	logging.Info("Default poll interval updated", "interval_value", interval, "unit", unit, "interval_minutes", intervalInMinutes)
 
 	// Return properly formatted HTML for HTMX target replacement
-	response := s.formatPollIntervalResponse(intervalInMinutes)
+	response := s.FormatPollIntervalResponse(intervalInMinutes)
 	if _, err := fmt.Fprint(writer, response); err != nil {
 		logging.Error("Failed to write poll interval response", "error", err)
 	}
 }
 
-func (s *Server) parseDefaultPollIntervalForm(request *http.Request) (int, models.TimeUnit, error) {
+func (s *Server) ParseDefaultPollIntervalForm(request *http.Request) (int, models.TimeUnit, error) {
 	intervalStr := request.FormValue("default_poll_interval")
 	unitStr := request.FormValue("default_poll_interval_unit")
 	
@@ -585,7 +588,7 @@ func (s *Server) parseDefaultPollIntervalForm(request *http.Request) (int, model
 	return interval, unit, nil
 }
 
-func (s *Server) convertToMinutes(interval int, unit models.TimeUnit) int {
+func (s *Server) ConvertToMinutes(interval int, unit models.TimeUnit) int {
 	switch unit {
 	case models.TimeUnitMinutes:
 		return interval
@@ -598,42 +601,46 @@ func (s *Server) convertToMinutes(interval int, unit models.TimeUnit) int {
 	}
 }
 
-func (s *Server) formatPollIntervalResponse(intervalInMinutes int) string {
+func (s *Server) FormatPollIntervalResponse(intervalInMinutes int) string {
 	var display string
-	if intervalInMinutes == 1440 {
+	
+	switch {
+	case intervalInMinutes == 1440:
 		display = "1 day"
-	} else if intervalInMinutes == 60 {
+	case intervalInMinutes == 60:
 		display = "1 hour"
-	} else if intervalInMinutes%1440 == 0 {
+	case intervalInMinutes%1440 == 0:
 		display = fmt.Sprintf("%d days", intervalInMinutes/1440)
-	} else if intervalInMinutes%60 == 0 {
+	case intervalInMinutes%60 == 0:
 		display = fmt.Sprintf("%d hours", intervalInMinutes/60)
-	} else {
+	default:
 		display = fmt.Sprintf("%d minutes", intervalInMinutes)
 	}
 	
 	return fmt.Sprintf(`<span id="default-poll-interval-display">%s</span>`, display)
 }
 
-// equalIntPointers compares two int pointers for equality
-func equalIntPointers(a, b *int) bool {
-	if a == nil && b == nil {
+// EqualIntPointers compares two int pointers for equality
+func EqualIntPointers(first, second *int) bool {
+	if first == nil && second == nil {
 		return true
 	}
-	if a == nil || b == nil {
+	if first == nil || second == nil {
 		return false
 	}
-	return *a == *b
+
+	return *first == *second
 }
 
-// equalTimePointers compares two time pointers for equality
-func equalTimePointers(a, b *time.Time) bool {
-	if a == nil && b == nil {
+// EqualTimePointers compares two time pointers for equality
+func EqualTimePointers(first, second *time.Time) bool {
+	if first == nil && second == nil {
 		return true
 	}
-	if a == nil || b == nil {
+	if first == nil || second == nil {
 		return false
 	}
-	return a.Equal(*b)
+
+	return first.Equal(*second)
 }
 
